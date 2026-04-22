@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 20% 98%;
+    --foreground: 25 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 25 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 25 20% 12%;
+    --primary: 24 70% 35%;
+    --primary-foreground: 30 25% 98%;
+    --secondary: 30 15% 92%;
+    --secondary-foreground: 25 20% 12%;
+    --muted: 30 15% 94%;
+    --muted-foreground: 25 10% 45%;
+    --accent: 30 30% 90%;
+    --accent-foreground: 25 20% 12%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 15% 88%;
+    --input: 30 15% 88%;
+    --ring: 24 70% 35%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+  }
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-receipt,
+  .print-receipt * {
+    visibility: visible;
+  }
+  .print-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    padding: 4mm;
+    color: #000;
+    background: #fff;
+  }
+  .print-hidden {
+    display: none !important;
+  }
+}
