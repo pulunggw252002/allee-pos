@@ -51,7 +51,11 @@ export default function CloseShiftPage() {
     try {
       const summary = await closeShift({ shiftId: shift.id, actualCash: actual });
       setClosedSummary(summary);
-      clearShift();
+      // NOTE: TIDAK memanggil clearShift() di sini. Kalau shift di-clear sekarang,
+      // ShiftGuard di layout (pos) akan melihat !shift dan redirect ke /shift/open
+      // SEBELUM card konfirmasi summary sempat dilihat user. clearShift() di-tunda
+      // ke handler tombol Logout / Buka Shift Baru di bawah (yang navigasinya keluar
+      // dari (pos) route group).
       toast.success("Shift berhasil ditutup");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gagal tutup shift");
@@ -87,6 +91,7 @@ export default function CloseShiftPage() {
               <Button
                 className="flex-1"
                 onClick={() => {
+                  clearShift();
                   logout();
                   router.replace("/login");
                 }}
@@ -96,7 +101,10 @@ export default function CloseShiftPage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => router.replace("/shift/open")}
+                onClick={() => {
+                  clearShift();
+                  router.replace("/shift/open");
+                }}
               >
                 Buka Shift Baru
               </Button>

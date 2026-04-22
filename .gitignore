@@ -18,5 +18,17 @@ pos.db
 pos.db-shm
 pos.db-wal
 
+# E2E test DB (dibangun ulang setiap run oleh global-setup)
+test-pos.db
+test-pos.db-shm
+test-pos.db-wal
+
+# Playwright artifacts
+playwright-report/
+test-results/
+blob-report/
+
 # Drizzle studio / misc
 .drizzle/
+
+.vercel

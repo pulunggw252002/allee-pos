@@ -44,12 +44,10 @@ export default function LoginPage() {
 
   const handleChange = (next: string) => {
     setPin(next);
-    if (next.length === 6 && next !== "0") {
+    if (next.length === 6) {
       void handleSubmit(next);
     }
   };
-
-  const pinDisplay = pin === "0" ? "" : pin;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 via-background to-stone-100 p-6">
@@ -70,7 +68,7 @@ export default function LoginPage() {
               <div
                 key={i}
                 className={`h-4 w-4 rounded-full border-2 transition-colors ${
-                  i < pinDisplay.length
+                  i < pin.length
                     ? "border-primary bg-primary"
                     : "border-muted-foreground/30 bg-transparent"
                 }`}
@@ -78,10 +76,12 @@ export default function LoginPage() {
             ))}
           </div>
 
+          {/* PIN mode — allowLeadingZero agar PIN "012345" juga valid. */}
           <Numpad
-            value={pinDisplay || "0"}
-            onChange={(v) => handleChange(v === "0" ? "" : v)}
+            value={pin}
+            onChange={handleChange}
             maxLength={6}
+            allowLeadingZero
           />
 
           <div className="mt-6 flex justify-center">

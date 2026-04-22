@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Clock,
   Flame,
-  Package,
   RotateCw,
   ShoppingBag,
   UtensilsCrossed,

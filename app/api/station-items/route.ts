@@ -1,4 +1,4 @@
-import { and, ne } from "drizzle-orm";
+import { ne } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handle, ok } from "@/lib/api-server/response";
 import { requireSession } from "@/lib/api-server/session";
