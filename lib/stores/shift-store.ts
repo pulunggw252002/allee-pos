@@ -17,8 +17,14 @@ export const useShiftStore = create<ShiftState>((set) => ({
   hydrated: false,
   setShift: (s) => set({ shift: s }),
   hydrate: async () => {
-    const active = await getActiveShift();
-    set({ shift: active, hydrated: true });
+    try {
+      const active = await getActiveShift();
+      set({ shift: active, hydrated: true });
+    } catch {
+      // 401 (belum login) atau network error — tetap tandai hydrated supaya
+      // RootRedirect bisa lanjut redirect ke /login. Shift state dibiarkan null.
+      set({ shift: null, hydrated: true });
+    }
   },
   clear: () => set({ shift: null }),
 }));
