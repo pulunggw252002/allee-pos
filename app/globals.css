@@ -24,6 +24,21 @@
     --input: 30 15% 88%;
     --ring: 24 70% 35%;
     --radius: 0.75rem;
+
+    /* iOS safe-area fallback. Nanti di-override oleh env() di mobile. */
+    --sa-top: 0px;
+    --sa-right: 0px;
+    --sa-bottom: 0px;
+    --sa-left: 0px;
+  }
+
+  @supports (padding: env(safe-area-inset-top)) {
+    :root {
+      --sa-top: env(safe-area-inset-top);
+      --sa-right: env(safe-area-inset-right);
+      --sa-bottom: env(safe-area-inset-bottom);
+      --sa-left: env(safe-area-inset-left);
+    }
   }
 }
 
@@ -38,15 +53,50 @@
     -webkit-user-select: none;
     user-select: none;
     overscroll-behavior: none;
+    /* iOS momentum scrolling di dalam scrollable area */
+    -webkit-overflow-scrolling: touch;
+  }
+  html {
+    /* Mencegah horizontal bounce di iOS saat device orientation change */
+    touch-action: manipulation;
   }
   input,
   textarea {
     -webkit-user-select: text;
     user-select: text;
+    /* Cegah iOS auto-zoom ketika focus input (trigger kalau font < 16px) */
+    font-size: max(16px, 1rem);
   }
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Safe-area utilities — dipakai supaya konten tidak ketabrak notch / home indicator. */
+@layer utilities {
+  .pt-safe { padding-top: var(--sa-top); }
+  .pr-safe { padding-right: var(--sa-right); }
+  .pb-safe { padding-bottom: var(--sa-bottom); }
+  .pl-safe { padding-left: var(--sa-left); }
+  .px-safe {
+    padding-left: var(--sa-left);
+    padding-right: var(--sa-right);
+  }
+  .py-safe {
+    padding-top: var(--sa-top);
+    padding-bottom: var(--sa-bottom);
+  }
+  .mb-safe { margin-bottom: var(--sa-bottom); }
+
+  /* Gabung dengan padding eksisting: pb-[calc(var(--sa-bottom)+X)] dsb.
+     Dipakai di bar aksi yang nempel bawah layar. */
+  .pb-safe-4 { padding-bottom: calc(var(--sa-bottom) + 1rem); }
+  .pb-safe-6 { padding-bottom: calc(var(--sa-bottom) + 1.5rem); }
+
+  /* Dynamic viewport height — lebih akurat di mobile browser (iOS bar auto-hide). */
+  .h-dscreen { height: 100dvh; }
+  .min-h-dscreen { min-height: 100dvh; }
+  .max-h-dscreen { max-height: 100dvh; }
 }
 
 @media print {

@@ -66,7 +66,7 @@ export default function CloseShiftPage() {
 
   if (closedSummary) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <div className="mx-auto max-w-2xl p-3 pb-[calc(var(--sa-bottom)+1rem)] sm:p-6">
         <Card>
           <CardHeader className="items-center text-center">
             <CheckCircle2 className="h-12 w-12 text-emerald-500" />
@@ -87,9 +87,10 @@ export default function CloseShiftPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <SummaryBlock summary={closedSummary} />
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Button
                 className="flex-1"
+                size="lg"
                 onClick={() => {
                   clearShift();
                   logout();
@@ -101,6 +102,7 @@ export default function CloseShiftPage() {
               <Button
                 variant="outline"
                 className="flex-1"
+                size="lg"
                 onClick={() => {
                   clearShift();
                   router.replace("/shift/open");
@@ -124,7 +126,7 @@ export default function CloseShiftPage() {
   }
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-4 p-4 lg:grid-cols-[1.1fr_1fr]">
+    <div className="mx-auto grid max-w-6xl gap-4 p-3 pb-[calc(var(--sa-bottom)+1rem)] sm:p-4 lg:grid-cols-[1.1fr_1fr]">
       <div className="space-y-4">
         <Button variant="ghost" onClick={() => router.push("/order")} className="w-fit">
           <ArrowLeft className="h-4 w-4" /> Kembali

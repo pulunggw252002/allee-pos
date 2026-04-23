@@ -12,6 +12,15 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "ALLEE POS",
   description: "ALLEE Social House — Point of Sale",
+  applicationName: "ALLEE POS",
+  appleWebApp: {
+    capable: true,
+    title: "ALLEE POS",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -19,6 +28,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#a85725" },
+    { media: "(prefers-color-scheme: dark)", color: "#7a3e1a" },
+  ],
 };
 
 export default function RootLayout({
@@ -28,7 +42,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" className={inter.variable}>
-      <body className="font-sans antialiased">
+      <body className="min-h-[100dvh] bg-background font-sans antialiased">
         {children}
         <Toaster position="top-center" richColors />
       </body>

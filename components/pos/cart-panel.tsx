@@ -47,7 +47,17 @@ const ORDER_TYPES: Array<{
   { id: "delivery", label: "Delivery", icon: Bike },
 ];
 
-export function CartPanel() {
+interface CartPanelProps {
+  /**
+   * Callback untuk menutup drawer saat dipakai di mobile sheet.
+   * Tidak dipanggil saat dipakai sebagai aside side-bar di desktop.
+   */
+  onAfterAction?: () => void;
+  /** Sembunyikan border kiri (dipakai di drawer mobile). */
+  borderless?: boolean;
+}
+
+export function CartPanel({ onAfterAction, borderless }: CartPanelProps = {}) {
   const router = useRouter();
   const items = useCartStore((s) => s.items);
   const orderType = useCartStore((s) => s.orderType);
@@ -126,6 +136,7 @@ export function CartPanel() {
         })),
       });
       clearCart();
+      onAfterAction?.();
       if (isOpenBill) {
         toast.success(`Open Bill disimpan${order.customerName ? ` — ${order.customerName}` : ""}`);
         router.push("/tables");
@@ -150,7 +161,12 @@ export function CartPanel() {
   };
 
   return (
-    <aside className="flex h-full flex-col border-l bg-card">
+    <aside
+      className={cn(
+        "flex h-full flex-col bg-card",
+        !borderless && "border-l"
+      )}
+    >
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div>
           <h2 className="text-base font-semibold">Order Baru</h2>
@@ -369,7 +385,7 @@ export function CartPanel() {
         <Row label="Service 5%" value={formatIDR(service)} />
       </div>
 
-      <div className="border-t px-4 py-3">
+      <div className="border-t px-4 py-3 pb-safe-4">
         <div className="mb-3 flex items-end justify-between">
           <span className="text-sm font-medium text-muted-foreground">Total</span>
           <span className="text-3xl font-bold tabular">{formatIDR(total)}</span>

@@ -102,7 +102,7 @@ export default function PaymentPage() {
   }
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-4 p-4 lg:grid-cols-[1fr_1.2fr]">
+    <div className="mx-auto grid max-w-6xl gap-4 p-3 pb-[calc(var(--sa-bottom)+1rem)] sm:p-4 lg:grid-cols-[1fr_1.2fr]">
       <div className="space-y-4">
         <Button variant="ghost" onClick={() => router.push("/order")} className="w-fit">
           <ArrowLeft className="h-4 w-4" /> Kembali ke Order
@@ -239,7 +239,7 @@ export default function PaymentPage() {
                 <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">
                   Nominal uang
                 </p>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                   <Button
                     variant="outline"
                     className="h-12 font-semibold"
@@ -264,7 +264,7 @@ export default function PaymentPage() {
                 <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">
                   Saran (pembulatan ke atas)
                 </p>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                   {suggestions.slice(0, 5).map((v) => (
                     <Button
                       key={v}
@@ -274,9 +274,6 @@ export default function PaymentPage() {
                     >
                       {formatIDR(v)}
                     </Button>
-                  ))}
-                  {Array.from({ length: Math.max(0, 5 - suggestions.length) }).map((_, i) => (
-                    <div key={`empty-${i}`} />
                   ))}
                 </div>
               </div>

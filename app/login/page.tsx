@@ -50,9 +50,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 via-background to-stone-100 p-6">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-gradient-to-br from-amber-50 via-background to-stone-100 p-4 pt-[calc(var(--sa-top)+1rem)] pb-[calc(var(--sa-bottom)+1rem)] sm:p-6">
       <Card className="w-full max-w-md">
-        <CardContent className="pt-8">
+        <CardContent className="pt-6 sm:pt-8">
           <div className="mb-6 flex flex-col items-center gap-2 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
               <Utensils className="h-7 w-7" />

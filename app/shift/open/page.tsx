@@ -60,17 +60,18 @@ function OpenShiftInner() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-background to-stone-100 p-6">
+    <div className="min-h-[100dvh] bg-gradient-to-br from-amber-50 via-background to-stone-100 p-3 pt-[calc(var(--sa-top)+0.75rem)] pb-[calc(var(--sa-bottom)+1rem)] sm:p-6">
       <div className="mx-auto max-w-4xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Buka Shift</h1>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold sm:text-2xl">Buka Shift</h1>
             <p className="text-sm text-muted-foreground">
               Kasir: <span className="font-medium text-foreground">{cashier?.name}</span>
             </p>
           </div>
           <Button
             variant="ghost"
+            size="sm"
             onClick={() => {
               useAuthStore.getState().logout();
               router.replace("/login");
@@ -98,7 +99,7 @@ function OpenShiftInner() {
                 <p className="mt-1 text-4xl font-semibold tabular">{formatIDR(amount)}</p>
               </div>
 
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                 {openingCashPresets.map((d) => (
                   <Button
                     key={d}

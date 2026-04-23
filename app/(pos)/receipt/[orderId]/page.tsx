@@ -48,16 +48,18 @@ export default function ReceiptPage() {
   const servicePct = Math.round(outlet.serviceRate * 100);
 
   return (
-    <div className="mx-auto max-w-2xl p-4">
-      <div className="mb-4 flex items-center justify-between print-hidden">
-        <Button variant="ghost" onClick={() => router.push("/order")}>
+    <div className="mx-auto max-w-2xl p-3 pb-[calc(var(--sa-bottom)+1rem)] sm:p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print-hidden">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/order")}>
           <ArrowLeft className="h-4 w-4" /> Kembali
         </Button>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer className="h-4 w-4" /> Cetak Struk
+        <div className="flex flex-1 justify-end gap-2 sm:flex-none">
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+            <span className="hidden sm:inline">Cetak Struk</span>
+            <span className="sm:hidden">Cetak</span>
           </Button>
-          <Button onClick={() => router.push("/order")}>
+          <Button size="sm" onClick={() => router.push("/order")}>
             <Plus className="h-4 w-4" /> Order Baru
           </Button>
         </div>

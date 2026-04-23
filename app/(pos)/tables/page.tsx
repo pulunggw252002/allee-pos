@@ -76,15 +76,15 @@ export default function OpenBillsPage() {
   }, [orders]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Open Bills &amp; Order Aktif</h1>
+    <div className="mx-auto max-w-6xl space-y-4 p-3 pb-[calc(var(--sa-bottom)+1rem)] sm:p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Open Bills &amp; Order Aktif</h1>
           <p className="text-sm text-muted-foreground">
             Order yang belum dibayar. Tap untuk lanjut ke pembayaran.
           </p>
         </div>
-        <Button variant="outline" onClick={refresh}>
+        <Button variant="outline" size="sm" onClick={refresh}>
           <RotateCw className="h-4 w-4" /> Refresh
         </Button>
       </div>
@@ -99,7 +99,7 @@ export default function OpenBillsPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           <FilterChip active={filter === "all"} onClick={() => setFilter("all")}>
             Semua ({counts.all})
           </FilterChip>
