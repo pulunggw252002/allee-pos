@@ -30,11 +30,12 @@
  *    masih reference produk lama untuk audit history.
  */
 
-import { eq, inArray, notInArray } from "drizzle-orm";
+import { eq, inArray, notInArray, and } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import {
   fetchCategories,
   fetchMenusForOutlet,
+  fetchPosPinsForOutlet,
   fetchUsers,
   resolveOutletId,
 } from "./reads";
@@ -57,6 +58,7 @@ export interface SyncReport {
   categories: { upserted: number };
   products: { upserted: number; deactivated: number };
   users: { upserted: number };
+  pins: { upserted: number; cleared: number };
   durationMs: number;
 }
 
@@ -199,6 +201,75 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     }
   });
 
+  // --- PIN hashes → accounts (Better Auth credential provider) -------------
+  // Pull hash dari endpoint internal backoffice, lalu upsert ke tabel `account`
+  // sehingga `auth.api.signInUsername` bisa men-verify PIN tanpa POS perlu
+  // tahu PIN plain-text. Hash format = scrypt Better Auth, kompatibel langsung.
+  //
+  // Important: `account.id` di Better Auth biasanya = `userId` (1 user 1
+  // credential row) — kita pakai pola yang sama supaya idempotent.
+  const pins = await fetchPosPinsForOutlet(outletId);
+  // Filter pin yang user-nya benar-benar relevan untuk POS (sudah di-sync
+  // ke `user` table). Hash untuk user yang tidak relevan (mis. owner) di-skip.
+  const relevantUserIds = new Set(posRelevant.map((u) => u.id));
+  const pinsForPos = pins.filter((p) => relevantUserIds.has(p.user_id));
+
+  let pinsUpserted = 0;
+  let pinsCleared = 0;
+  await db.transaction(async (tx) => {
+    for (const pin of pinsForPos) {
+      // Cek apakah user ini sudah punya credential account row.
+      const existing = await tx
+        .select()
+        .from(schema.accounts)
+        .where(
+          and(
+            eq(schema.accounts.userId, pin.user_id),
+            eq(schema.accounts.providerId, "credential"),
+          ),
+        )
+        .limit(1);
+
+      if (existing.length === 0) {
+        await tx.insert(schema.accounts).values({
+          id: pin.user_id,
+          userId: pin.user_id,
+          accountId: pin.user_id,
+          providerId: "credential",
+          password: pin.pos_pin_hash,
+        });
+      } else {
+        await tx
+          .update(schema.accounts)
+          .set({ password: pin.pos_pin_hash })
+          .where(eq(schema.accounts.id, existing[0].id));
+      }
+      pinsUpserted++;
+    }
+
+    // Untuk user POS yang DI-sync tapi backoffice tidak return PIN hash
+    // (PIN di-clear di backoffice), kita harus REVOKE PIN-nya di POS:
+    // hapus account row supaya signInUsername otomatis gagal.
+    const pinUserIds = new Set(pinsForPos.map((p) => p.user_id));
+    for (const u of posRelevant) {
+      if (pinUserIds.has(u.id)) continue;
+      const cred = await tx
+        .select()
+        .from(schema.accounts)
+        .where(
+          and(
+            eq(schema.accounts.userId, u.id),
+            eq(schema.accounts.providerId, "credential"),
+          ),
+        )
+        .limit(1);
+      if (cred.length > 0) {
+        await tx.delete(schema.accounts).where(eq(schema.accounts.id, cred[0].id));
+        pinsCleared++;
+      }
+    }
+  });
+
   // Catat timestamp di system_meta supaya `ensureFreshSync` tau apakah perlu
   // revalidate di request berikutnya.
   await markLastSyncedAt(new Date());
@@ -208,6 +279,7 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     categories: { upserted: posCategories.length },
     products: { upserted: posProducts.length, deactivated },
     users: { upserted: posRelevant.length },
+    pins: { upserted: pinsUpserted, cleared: pinsCleared },
     durationMs: Date.now() - start,
   };
 }
