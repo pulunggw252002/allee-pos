@@ -29,6 +29,7 @@
  */
 
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { ApiError, handle, ok } from "@/lib/api-server/response";
 import { triggerSyncForWebhook } from "@/lib/api-server/backoffice/sync";
 import { isBackofficeModeEnabled } from "@/lib/api-server/backoffice/config";
@@ -79,13 +80,24 @@ export async function POST(req: Request) {
       // body kosong / non-JSON — abaikan
     }
 
-    // Fire-and-forget: kita tidak menunggu sync selesai. `triggerSyncForWebhook`
-    // sudah handle de-dupe + trailing-edge supaya tidak ada race.
-    void triggerSyncForWebhook().catch((e) => {
-      console.warn(
-        `[backoffice/webhook] sync gagal untuk ${payload.entity}/${payload.event}/${payload.entity_id}:`,
-        e instanceof Error ? e.message : e,
-      );
+    // **Vercel serverless caveat:** `void promise` di handler akan ke-kill saat
+    // function instance freeze setelah response dikirim. Hasilnya: webhook
+    // selalu return 200 OK tapi sync TIDAK pernah complete — bug yang bikin
+    // POS DB tetap kosong walau backoffice sukses fire webhook.
+    //
+    // Solusi: `after()` dari next/server menjadwalkan callback berjalan
+    // SETELAH response terkirim, dan Vercel runtime menjaga instance tetap
+    // hidup sampai callback selesai (atau timeout function tercapai).
+    // Backoffice tetap dapat 200 cepat, sync tetap completed.
+    after(async () => {
+      try {
+        await triggerSyncForWebhook();
+      } catch (e) {
+        console.warn(
+          `[backoffice/webhook] sync gagal untuk ${payload.entity}/${payload.event}/${payload.entity_id}:`,
+          e instanceof Error ? e.message : e,
+        );
+      }
     });
 
     return ok({
