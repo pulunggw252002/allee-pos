@@ -7,9 +7,15 @@
  *    (`/api/products`, `/api/categories`, dst.) tetap baca dari local DB,
  *    sehingga FK relasi (order_item.product_id, dll.) tetap valid dan POS
  *    bisa terus jalan walau backoffice sedang down.
- *  - Sync dilakukan eksplisit lewat `POST /api/backoffice/sync` (atau scheduled
- *    job di hosting). Tidak ada "lazy fetch on each request" supaya latency
- *    POS tidak ke-tackle backoffice round-trip per click.
+ *  - Sync bisa di-trigger 3 cara:
+ *      1. Manual: `POST /api/backoffice/sync` (UI tombol / curl supervisor).
+ *      2. Stale-while-revalidate: dipicu otomatis oleh `ensureFreshSync` saat
+ *         GET /api/products|categories|cashiers kalau last sync > 5 menit.
+ *         Background, **tidak ng-block response** ke kasir.
+ *      3. First-run await: kalau belum pernah sync, request pertama nunggu
+ *         sync sukses supaya catalog tidak kosong.
+ *  - Tidak ada lazy fetch per click (POS read tetap dari DB lokal); latency
+ *    backoffice cuma kena saat sync background, kasir tidak kerasa.
  *
  * Konsep yang TIDAK di-sync:
  *  - Stations/KDS routing → POS-only (lihat mappers.ts).
@@ -241,6 +247,19 @@ export async function getLastSyncedAt(): Promise<Date | null> {
  * di module scope; kalau sync running, calls berikutnya re-use promise itu.
  */
 let inFlight: Promise<SyncReport> | null = null;
+/**
+ * Trailing-edge flag: di-set saat webhook datang sementara sync sedang jalan.
+ * Setelah sync current selesai, kita fire **satu** sync tambahan biar mutation
+ * yang masuk *selama* sync sebelumnya berlangsung tetap ke-pickup.
+ *
+ * Tanpa ini ada race subtle: sync mulai → owner update menu di backoffice →
+ * sync selesai (belum lihat update terbaru) → webhook tiba → dedupedSync
+ * lihat tidak ada in-flight, fire sync baru. Itu OK. Tapi kalau dua webhook
+ * tiba berturut-turut sambil sync jalan, webhook ke-2 akan join in-flight,
+ * yang TIDAK lihat update yang trigger webhook ke-2. Trailing flag mengatasi
+ * itu.
+ */
+let trailingScheduled = false;
 
 /**
  * Wrapper sync: returns existing promise kalau sync sedang jalan (de-dupe).
@@ -251,6 +270,33 @@ async function dedupedSync(): Promise<SyncReport> {
     inFlight = null;
   });
   return inFlight;
+}
+
+/**
+ * Khusus dipanggil dari webhook receiver. Kalau sync belum jalan → fire
+ * sync sekarang. Kalau sync sedang jalan → schedule trailing sync supaya
+ * perubahan yang trigger webhook ini ke-pickup setelah sync current selesai.
+ *
+ * Return promise yang resolve saat sync (current ATAU trailing) selesai —
+ * caller boleh `void`-kan untuk fire-and-forget.
+ */
+export async function triggerSyncForWebhook(): Promise<SyncReport> {
+  if (!inFlight) return dedupedSync();
+  // Sudah ada sync jalan. Tandai trailing sehingga setelah selesai kita
+  // fire sekali lagi, lalu await yang trailing itu. Kalau sudah ada trailing
+  // dijadwalkan, cukup join — semua webhook saat ini akan ke-cover oleh
+  // trailing sync yang sama.
+  if (trailingScheduled) return inFlight;
+  trailingScheduled = true;
+  // Tunggu current sync selesai (jangan throw — biarkan caller decide kalau
+  // mau handle), lalu langsung fire trailing.
+  try {
+    await inFlight;
+  } catch {
+    // ignore — trailing tetap jalan supaya kita coba pickup state terbaru
+  }
+  trailingScheduled = false;
+  return dedupedSync();
 }
 
 /**
