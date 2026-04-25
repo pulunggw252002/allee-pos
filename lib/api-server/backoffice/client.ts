@@ -44,7 +44,11 @@ function parseSetCookie(setCookie: string | null): CachedSession | null {
   if (!setCookie) return null;
   // `Set-Cookie` bisa berisi banyak cookie di-pisahkan koma — tapi value-nya
   // sendiri kadang punya koma di Expires. Kita cari token spesifik.
-  const tokenMatch = setCookie.match(/allee\.session_token=[^;,]+/);
+  //
+  // Better Auth otomatis menambah prefix `__Secure-` di cookie name saat
+  // attribute Secure aktif (production HTTPS). Kita harus capture prefix-nya
+  // supaya saat dikirim balik ke backoffice, cookie name match exactly.
+  const tokenMatch = setCookie.match(/(?:__Secure-|__Host-)?allee\.session_token=[^;,]+/);
   if (!tokenMatch) return null;
 
   // Default 1 jam — kalau backoffice override pendek, akan ke-handle oleh 401 retry.
