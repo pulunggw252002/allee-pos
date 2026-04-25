@@ -176,7 +176,13 @@ export interface BackofficeUser {
   name: string;
   role: BackofficeRole;
   outlet_id: string;
-  email: string;
+  /**
+   * GET /api/users di backoffice TIDAK mengembalikan email — itu disimpan
+   * di tabel `user_auth` (Better Auth) terpisah dari domain user. POS
+   * synthesize email di sync.ts pakai slug name (`<name-slug>@allee.local`)
+   * supaya cocok dengan format yang seed backoffice pakai.
+   */
+  email?: string;
   /** Selalu di-redact: "***" atau null. Jangan pernah trust value selain itu. */
   pos_pin: "***" | null;
 }

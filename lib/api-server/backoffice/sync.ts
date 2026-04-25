@@ -159,12 +159,13 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
   await db.transaction(async (tx) => {
     for (const u of posRelevant) {
       const role = mapBackofficeRoleToPos(u);
+      const email = synthesizeEmail(u);
       await tx
         .insert(schema.users)
         .values({
           id: u.id,
           name: u.name,
-          email: u.email,
+          email,
           emailVerified: true,
           role,
           username: deriveUsername(u),
@@ -174,7 +175,7 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
           target: schema.users.id,
           set: {
             name: u.name,
-            email: u.email,
+            email,
             role,
             displayUsername: u.name,
           },
@@ -201,14 +202,41 @@ function mapBackofficeRoleToPos(u: BackofficeUser): "cashier" | "supervisor" {
 }
 
 /**
- * Username untuk login POS. Pakai email-local-part kalau ada, fallback ke
- * slug name. Better Auth butuh unique. Backoffice tidak expose username
- * eksplisit, jadi kita derive deterministik.
+ * Slugify konsisten dengan backoffice/scripts/seed.ts → emailFor():
+ *   lowercase + NFKD + replace non-word → "-" + trim "-".
+ * Penting: harus deterministik biar email login user POS = email yg sama
+ * dengan yang ada di tabel `user_auth` backoffice (kalau-kalau besok kita
+ * mau cross-login).
+ */
+function slugifyName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Backoffice GET /api/users TIDAK expose email (ada di table user_auth
+ * terpisah). Untuk POS local DB kita synthesize sesuai konvensi seed
+ * backoffice — `<slug>@allee.local`. Kalau backoffice nanti expose email
+ * di response, helper ini auto-prefer field aslinya.
+ */
+function synthesizeEmail(u: BackofficeUser): string {
+  if (u.email && u.email.trim()) return u.email.trim();
+  const slug = slugifyName(u.name);
+  return `${slug || u.id}@allee.local`;
+}
+
+/**
+ * Username untuk login POS. Pakai email-local-part. Better Auth butuh
+ * unique. Backoffice tidak expose username eksplisit, jadi kita derive
+ * deterministik dari nama via synthesizeEmail.
  */
 function deriveUsername(u: BackofficeUser): string {
-  const local = u.email.split("@")[0]?.trim();
+  const local = synthesizeEmail(u).split("@")[0]?.trim();
   if (local) return local.toLowerCase();
-  return u.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slugifyName(u.name) || u.id.toLowerCase();
 }
 
 /**
