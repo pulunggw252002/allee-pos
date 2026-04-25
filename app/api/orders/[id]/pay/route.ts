@@ -5,6 +5,9 @@ import { ApiError, handle, ok } from "@/lib/api-server/response";
 import { requireSession } from "@/lib/api-server/session";
 import { newId } from "@/lib/api-server/ids";
 import { mapFullOrder } from "@/lib/api-server/order-mapper";
+import { isBackofficeModeEnabled } from "@/lib/api-server/backoffice/config";
+import { resolveOutletId } from "@/lib/api-server/backoffice/reads";
+import { pushTransactionBestEffort } from "@/lib/api-server/backoffice/writes";
 
 const bodySchema = z.object({
   method: z.enum(["cash", "qris", "card", "transfer"]),
@@ -76,6 +79,54 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       where: eq(schema.orders.id, id),
       with: { items: true, payment: true },
     });
+
+    // --- Best-effort push ke backoffice -----------------------------------
+    // Push hanya kalau mode aktif. Di-await tapi pakai *BestEffort wrapper
+    // sehingga error backoffice tidak ng-block respon ke kasir. Catatan:
+    // saat ini menjalankan inline (tidak di background queue) supaya kalau
+    // langsung sukses, response payment udah ter-sync. Untuk reliability
+    // production, idealnya pindah ke queue worker — tapi MVP cukup.
+    if (fresh && isBackofficeModeEnabled()) {
+      try {
+        const activeItems = fresh.items.filter((it) => !it.voidedAt);
+        // Lookup hppCached dari product local (sudah di-sync dari backoffice).
+        const productIds = activeItems.map((it) => it.productId);
+        const prods = productIds.length
+          ? await db.query.products.findMany({
+              where: (p, { inArray }) => inArray(p.id, productIds),
+            })
+          : [];
+        const hppMap = new Map(prods.map((p) => [p.id, p.hppCached ?? 0]));
+
+        const outletId = await resolveOutletId();
+        await pushTransactionBestEffort({
+          id: fresh.id,
+          outletId,
+          paymentMethod: fresh.payment?.method ?? body.method,
+          orderType: fresh.orderType,
+          status: "paid",
+          subtotal: fresh.subtotal,
+          discountTotal: fresh.discount,
+          ppnAmount: fresh.tax,
+          serviceChargeAmount: fresh.service,
+          grandTotal: fresh.total,
+          createdAt: fresh.createdAt,
+          items: activeItems.map((it) => ({
+            productId: it.productId,
+            productName: it.productName,
+            unitPrice: it.unitPrice,
+            hppSnapshot: hppMap.get(it.productId) ?? 0,
+            qty: it.qty,
+            subtotal: it.unitPrice * it.qty,
+          })),
+        });
+      } catch (e) {
+        // *BestEffort sudah swallow, ini guard untuk error di luar
+        // (mis. resolveOutletId throw karena config rusak).
+        console.warn("[backoffice] push setelah pay gagal:", e instanceof Error ? e.message : e);
+      }
+    }
+
     return ok(mapFullOrder(fresh!));
   });
 }

@@ -8,6 +8,13 @@
       "when": 1776848431831,
       "tag": "0000_broad_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1777093183732,
+      "tag": "0001_easy_centennial",
+      "breakpoints": true
     }
   ]
 }

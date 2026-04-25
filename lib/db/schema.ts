@@ -78,6 +78,10 @@ export const products = sqliteTable("product", {
   stationId: text("station_id").notNull().references(() => stations.id, { onDelete: "restrict" }),
   imageEmoji: text("image_emoji"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  // HPP cache — di-sync dari backoffice (`menu.hpp_cached`). Dipakai sebagai
+  // `hpp_snapshot` saat POS push transaksi ke backoffice supaya laporan
+  // profit akurat. Default 0 untuk mode standalone yang tidak track HPP.
+  hppCached: integer("hpp_cached").notNull().default(0),
 });
 
 export const tables = sqliteTable("restaurant_table", {

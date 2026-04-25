@@ -25,6 +25,10 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     if (!row) throw new ApiError(404, "Order tidak ditemukan");
     if (row.status === "paid") throw new ApiError(409, "Order sudah dibayar — tidak bisa di-void");
 
+    // Catatan: DELETE ini hanya untuk void OPEN order (yang belum dibayar).
+    // Order open belum pernah di-push ke backoffice (push terjadi saat pay),
+    // jadi tidak ada yang perlu di-sync ke backoffice di sini. Untuk void
+    // item dari paid order, lihat `app/api/orders/[id]/items/[itemId]/void`.
     await db.transaction(async (tx) => {
       await tx.update(schema.orders).set({ status: "void" }).where(eq(schema.orders.id, id));
       if (row.orderType === "dine-in" && row.tableNumber) {

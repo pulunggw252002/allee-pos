@@ -5,6 +5,8 @@ import { ApiError, handle, ok } from "@/lib/api-server/response";
 import { requireSession } from "@/lib/api-server/session";
 import { SERVER_POS_CONFIG } from "@/lib/api-server/pos-config";
 import { mapFullOrder } from "@/lib/api-server/order-mapper";
+import { isBackofficeModeEnabled } from "@/lib/api-server/backoffice/config";
+import { pushVoidItemBestEffort } from "@/lib/api-server/backoffice/writes";
 
 const bodySchema = z.object({
   reason: z.string().trim().min(1, "Alasan void wajib diisi").max(200),
@@ -123,6 +125,32 @@ export async function POST(
       with: { items: true, payment: true },
     });
     if (!fresh) throw new ApiError(500, "Gagal mengambil order setelah void");
+
+    // --- Best-effort push void ke backoffice ------------------------------
+    // Backoffice generate item-id sendiri (≠ POS item.id), jadi kita
+    // identifikasi item via INDEX-nya di array items POS — server backoffice
+    // insert items urut sesuai payload kita di POST /api/transactions.
+    // Untuk amannya kita kirim juga `expectedItemName` sebagai cross-check.
+    if (isBackofficeModeEnabled() && fresh.status === "paid") {
+      try {
+        // Sort items by id (sama dengan urutan saat push pertama kali —
+        // POS pakai newId() yang monotonic dengan timestamp).
+        const sorted = [...fresh.items].sort((a, b) => a.id.localeCompare(b.id));
+        const idx = sorted.findIndex((it) => it.id === itemId);
+        const target = sorted[idx];
+        if (idx >= 0 && target) {
+          await pushVoidItemBestEffort({
+            transactionId: id,
+            itemIndex: idx,
+            expectedItemName: target.productName,
+            reason,
+          });
+        }
+      } catch (e) {
+        console.warn("[backoffice] push void item gagal:", e instanceof Error ? e.message : e);
+      }
+    }
+
     return ok(mapFullOrder(fresh));
   });
 }
