@@ -11,6 +11,7 @@ import { loginWithPin, signOut } from "@/lib/api/auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useShiftStore } from "@/lib/stores/shift-store";
 import { MOCK_CASHIERS } from "@/lib/mock/cashiers";
+import { getPosConfig } from "@/lib/api/config";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +19,9 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const setCashier = useAuthStore((s) => s.setCashier);
   const hydrate = useShiftStore((s) => s.hydrate);
+  // Brand di login page dibaca dynamic dari outlet config (bukan hardcoded).
+  const { outlet } = getPosConfig();
+  const brandName = outlet.brandName || "POS";
 
   useEffect(() => {
     void signOut().catch(() => {});
@@ -57,7 +61,7 @@ export default function LoginPage() {
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
               <Utensils className="h-7 w-7" />
             </div>
-            <h1 className="text-2xl font-semibold">ALLEE Social House</h1>
+            <h1 className="text-2xl font-semibold">{brandName}</h1>
             <p className="text-sm text-muted-foreground">
               Masukkan PIN kasir Anda untuk memulai shift.
             </p>

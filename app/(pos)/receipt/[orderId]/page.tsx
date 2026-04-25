@@ -135,7 +135,16 @@ export default function ReceiptPage() {
           <div className="print-receipt mx-auto max-w-[320px] font-mono text-[13px] leading-snug text-foreground">
             <div className="text-center">
               <p className="text-base font-bold">{outlet.brandName}</p>
-              <p className="text-xs">{outlet.subtitle}</p>
+              {outlet.subtitle && <p className="text-xs">{outlet.subtitle}</p>}
+              {outlet.address && (
+                <p className="text-[11px] leading-tight">{outlet.address}</p>
+              )}
+              {outlet.phone && (
+                <p className="text-[11px] leading-tight">Telp: {outlet.phone}</p>
+              )}
+              {outlet.taxId && (
+                <p className="text-[11px] leading-tight">NPWP: {outlet.taxId}</p>
+              )}
               {order.isOpenBill && (
                 <p className="mt-1 border border-dashed border-black py-0.5 text-xs font-bold">
                   {isPaid ? "OPEN BILL — PAID" : "OPEN BILL"}

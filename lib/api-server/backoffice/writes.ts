@@ -189,6 +189,14 @@ export async function pushVoidTransaction(opts: {
  * Wrapper "best-effort": panggil pusher, tangkap error, return null + log.
  * Caller pakai ini saat tidak mau ng-block POS happy path kalau backoffice
  * sebentar down (mis. push transaksi setelah pay sudah commit di local DB).
+ *
+ * Update penting: kalau gagal, kita TIDAK silent — masuk ke `sync_outbox`
+ * supaya bisa di-retry nanti (manual via UI banner atau auto via
+ * `drainSyncOutbox()`). Ini menutup gap "transaksi paid di POS tapi tidak
+ * pernah masuk laporan backoffice karena network down sebentar".
+ *
+ * NOTE: import outbox di-lazy supaya cycle import (writes ↔ outbox) aman:
+ * outbox.ts import push fns dari sini, dan kita import enqueue dari sana.
  */
 export async function pushTransactionBestEffort(
   input: PushTransactionInput
@@ -198,6 +206,12 @@ export async function pushTransactionBestEffort(
     return await pushTransaction(input);
   } catch (e) {
     console.warn("[backoffice] pushTransaction gagal (best-effort):", e instanceof Error ? e.message : e);
+    try {
+      const { enqueueOutbox } = await import("./outbox");
+      await enqueueOutbox({ kind: "transaction", payload: input }, input.id, e);
+    } catch (enqueueErr) {
+      console.error("[backoffice] gagal enqueue ke outbox:", enqueueErr);
+    }
     return null;
   }
 }
@@ -208,6 +222,14 @@ export async function pushVoidItemBestEffort(opts: Parameters<typeof pushVoidIte
     return await pushVoidItem(opts);
   } catch (e) {
     console.warn("[backoffice] pushVoidItem gagal (best-effort):", e instanceof Error ? e.message : e);
+    try {
+      const { enqueueOutbox } = await import("./outbox");
+      // Composite ref id biar push transaksi & void item-nya entry beda.
+      const refId = `${opts.transactionId}#${opts.posItem.productId}-${opts.posItem.qty}-${opts.duplicateIndex ?? 0}`;
+      await enqueueOutbox({ kind: "void_item", payload: opts }, refId, e);
+    } catch (enqueueErr) {
+      console.error("[backoffice] gagal enqueue ke outbox:", enqueueErr);
+    }
     return null;
   }
 }
@@ -218,6 +240,16 @@ export async function pushVoidTransactionBestEffort(opts: Parameters<typeof push
     return await pushVoidTransaction(opts);
   } catch (e) {
     console.warn("[backoffice] pushVoidTransaction gagal (best-effort):", e instanceof Error ? e.message : e);
+    try {
+      const { enqueueOutbox } = await import("./outbox");
+      await enqueueOutbox(
+        { kind: "void_transaction", payload: { transactionId: opts.transactionId, reason: opts.reason } },
+        opts.transactionId,
+        e,
+      );
+    } catch (enqueueErr) {
+      console.error("[backoffice] gagal enqueue ke outbox:", enqueueErr);
+    }
     return null;
   }
 }
@@ -314,6 +346,12 @@ export async function pushShiftSummaryBestEffort(
       "[backoffice] pushShiftSummary gagal (best-effort):",
       e instanceof Error ? e.message : e,
     );
+    try {
+      const { enqueueOutbox } = await import("./outbox");
+      await enqueueOutbox({ kind: "shift_summary", payload: input }, input.id, e);
+    } catch (enqueueErr) {
+      console.error("[backoffice] gagal enqueue shift summary ke outbox:", enqueueErr);
+    }
     return null;
   }
 }

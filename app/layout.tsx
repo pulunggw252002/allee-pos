@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+import { getOutletConfig } from "@/lib/api-server/runtime-config";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -9,19 +10,31 @@ const inter = Inter({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "ALLEE POS",
-  description: "ALLEE Social House — Point of Sale",
-  applicationName: "ALLEE POS",
-  appleWebApp: {
-    capable: true,
-    title: "ALLEE POS",
-    statusBarStyle: "black-translucent",
-  },
-  formatDetection: {
-    telephone: false,
-  },
-};
+/**
+ * Metadata di-generate dinamis dari outlet config — biar tab title browser
+ * ikut brand outlet. Franchise-ready (tidak ada hardcoded "ALLEE").
+ *
+ * Kalau outlet belum sync, getOutletConfig() return placeholder ("POS"),
+ * dan tab title pakai itu — tetap aman.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const outlet = await getOutletConfig().catch(() => null);
+  const brand = outlet?.brandName || "POS";
+  const subtitle = outlet?.subtitle || "Point of Sale";
+  return {
+    title: `${brand} POS`,
+    description: `${brand} — ${subtitle}`,
+    applicationName: `${brand} POS`,
+    appleWebApp: {
+      capable: true,
+      title: `${brand} POS`,
+      statusBarStyle: "black-translucent",
+    },
+    formatDetection: {
+      telephone: false,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",

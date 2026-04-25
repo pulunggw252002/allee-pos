@@ -29,6 +29,7 @@ import { signOut } from "@/lib/api/auth";
 import { formatDuration, formatIDR } from "@/lib/format";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { getPosConfig } from "@/lib/api/config";
 
 const NAV_ITEMS = [
   { href: "/order", label: "Order", icon: Coffee },
@@ -46,6 +47,11 @@ export function PosHeader() {
   const shift = useShiftStore((s) => s.shift);
   const [now, setNow] = useState<number>(() => Date.now());
   const [navOpen, setNavOpen] = useState(false);
+  // Brand di header dibaca dari runtime config (dynamic per outlet).
+  // Tidak ada hardcoded "ALLEE Social House" — franchise-ready.
+  const { outlet } = getPosConfig();
+  const brandName = outlet.brandName || "POS";
+  const brandSubtitle = outlet.subtitle || "POS Kasir";
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -94,8 +100,10 @@ export function PosHeader() {
                   <Utensils className="h-5 w-5" />
                 </div>
                 <div className="leading-tight text-left">
-                  <p className="text-sm font-semibold">ALLEE Social House</p>
-                  <p className="text-xs font-normal text-muted-foreground">POS Kasir</p>
+                  <p className="text-sm font-semibold">{brandName}</p>
+                  <p className="text-xs font-normal text-muted-foreground">
+                    {brandSubtitle}
+                  </p>
                 </div>
               </SheetTitle>
             </SheetHeader>
@@ -163,8 +171,10 @@ export function PosHeader() {
             <Utensils className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-semibold">ALLEE Social House</p>
-            <p className="hidden text-xs text-muted-foreground sm:block">POS Kasir</p>
+            <p className="truncate text-sm font-semibold">{brandName}</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">
+              {brandSubtitle}
+            </p>
           </div>
         </div>
 

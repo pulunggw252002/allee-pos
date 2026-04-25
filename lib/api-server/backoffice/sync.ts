@@ -91,22 +91,28 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
   const boOutlets = await fetchOutlets();
   await db.transaction(async (tx) => {
     for (const o of boOutlets) {
+      // Brand_name di backoffice optional — fallback ke nama outlet kalau
+      // owner belum set custom brand di halaman edit struk.
+      const brandName = (o.brand_name?.trim() || o.name) ?? o.name;
+      const brandSubtitle = o.brand_subtitle?.trim() || null;
+      const receiptFooter = o.receipt_footer ?? null;
+      const taxId = o.tax_id?.trim() || null;
+
       await tx
         .insert(schema.outlets)
         .values({
           id: o.id,
           name: o.name,
-          // Backoffice belum expose brand_name eksplisit — pakai `name` outlet
-          // sebagai brand fallback. Bisa di-extend kalau backoffice nambah field.
-          brandName: o.name,
+          brandName,
+          brandSubtitle,
           address: o.address ?? null,
           city: o.city ?? null,
           phone: o.phone ?? null,
           openingHours: o.opening_hours ?? null,
-          // receiptFooter di-set dari env atau default kalau backoffice belum
-          // expose. Kalau ada, jangan overwrite saat conflict (preserve user
-          // customization yang mungkin di-set lokal).
-          receiptFooter: null,
+          // Source of truth untuk struk = backoffice. Sync overwrite full —
+          // kalau owner edit di backoffice, POS pickup di sync berikutnya.
+          receiptFooter,
+          taxId,
           active: o.is_active,
           syncedAt: new Date(),
         })
@@ -114,11 +120,14 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
           target: schema.outlets.id,
           set: {
             name: o.name,
-            brandName: o.name,
+            brandName,
+            brandSubtitle,
             address: o.address ?? null,
             city: o.city ?? null,
             phone: o.phone ?? null,
             openingHours: o.opening_hours ?? null,
+            receiptFooter,
+            taxId,
             active: o.is_active,
             syncedAt: new Date(),
           },

@@ -30,6 +30,8 @@ export interface OutletConfig {
   address?: string;
   city?: string;
   phone?: string;
+  /** NPWP — di-render di receipt kalau outlet PKP. */
+  taxId?: string;
   /** Array string per-line untuk footer receipt. */
   receiptFooter: string[];
 }
@@ -67,10 +69,13 @@ export async function getOutletConfig(): Promise<OutletConfig> {
       return {
         id: row.id,
         brandName: row.brandName ?? row.name,
-        subtitle: undefined,
+        subtitle:
+          row.brandSubtitle ??
+          (process.env.NEXT_PUBLIC_BRAND_SUBTITLE?.trim() || undefined),
         address: row.address ?? undefined,
         city: row.city ?? undefined,
         phone: row.phone ?? undefined,
+        taxId: row.taxId ?? undefined,
         receiptFooter: parseReceiptFooter(row.receiptFooter) ?? envReceiptFooter() ?? DEFAULT_RECEIPT_FOOTER,
       };
     }
@@ -85,6 +90,7 @@ export async function getOutletConfig(): Promise<OutletConfig> {
     address: undefined,
     city: undefined,
     phone: undefined,
+    taxId: undefined,
     receiptFooter: envReceiptFooter() ?? DEFAULT_RECEIPT_FOOTER,
   };
 }

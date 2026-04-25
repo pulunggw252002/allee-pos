@@ -54,6 +54,14 @@ export interface BackofficeOutlet {
   opening_hours: string;
   is_active: boolean;
   created_at: string;
+  /** Brand di header struk. NULL ⇒ POS fallback ke `name`. */
+  brand_name?: string | null;
+  /** Tagline kecil di bawah brand name. */
+  brand_subtitle?: string | null;
+  /** JSON-stringified array of strings — line-by-line footer. */
+  receipt_footer?: string | null;
+  /** NPWP outlet (kalau PKP). */
+  tax_id?: string | null;
 }
 
 // --- §3.4 Categories ------------------------------------------------------

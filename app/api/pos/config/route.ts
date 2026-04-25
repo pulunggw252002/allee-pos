@@ -20,6 +20,7 @@ export async function GET() {
         address: outlet.address,
         city: outlet.city,
         phone: outlet.phone,
+        taxId: outlet.taxId,
         receiptFooter: outlet.receiptFooter,
         taxRate: tax.taxRate,
         serviceRate: tax.serviceRate,

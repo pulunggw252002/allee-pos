@@ -72,6 +72,40 @@ export const systemMeta = sqliteTable("system_meta", {
     .default(sql`(unixepoch())`),
 });
 
+/**
+ * Outbox untuk push backoffice yang gagal (network down, timeout, dll).
+ * Sebelum perubahan ini, `pushTransactionBestEffort` swallow error & log
+ * console — kalau backoffice down saat kasir bayar, transaksi orphan di
+ * POS DB selamanya (tidak pernah masuk ke laporan backoffice).
+ *
+ * Sekarang: setiap push gagal kita simpan payload-nya di sini, lalu di-drain
+ * via `POST /api/sync/retry` (manual atau dipanggil otomatis saat
+ * `/api/backoffice/sync` dijalankan SWR-style).
+ *
+ * Idempotency aman karena:
+ *  - kind="transaction" pakai POS order id sebagai key di backoffice.
+ *  - kind="void_item" tuple-match (productId+name+qty+price) — POS bisa
+ *    re-push tanpa double-void.
+ *  - kind="void_transaction" backoffice skip kalau status sudah void.
+ *  - kind="shift_summary" PK = shift id.
+ */
+export const syncOutbox = sqliteTable("sync_outbox", {
+  id: text("id").primaryKey(),
+  kind: text("kind", {
+    enum: ["transaction", "void_item", "void_transaction", "shift_summary"],
+  }).notNull(),
+  /** ID entity yang di-push (order id, shift id) — buat dedup di UI. */
+  refId: text("ref_id").notNull(),
+  /** JSON payload — input untuk `pushXxx()`. */
+  payload: text("payload").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  lastTriedAt: integer("last_tried_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 /* ---------- Catalog (pushed down from backoffice) ---------- */
 
 /**
@@ -91,12 +125,16 @@ export const outlets = sqliteTable("outlet", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   brandName: text("brand_name"),
+  /** Tagline kecil di bawah brand. Sync dari backoffice. */
+  brandSubtitle: text("brand_subtitle"),
   address: text("address"),
   city: text("city"),
   phone: text("phone"),
   openingHours: text("opening_hours"),
   /** JSON array of strings — line-by-line receipt footer. */
   receiptFooter: text("receipt_footer"),
+  /** NPWP — di-render di struk kalau outlet PKP. */
+  taxId: text("tax_id"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   syncedAt: integer("synced_at", { mode: "timestamp" })
     .notNull()

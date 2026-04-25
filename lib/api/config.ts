@@ -23,6 +23,8 @@ export interface OutletConfig {
   address?: string;
   city?: string;
   phone?: string;
+  /** NPWP outlet — di-render di header receipt kalau ada. */
+  taxId?: string;
   receiptFooter: string[];
   /** Desimal. 0.1 = 10%. */
   taxRate: number;
