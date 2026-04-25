@@ -37,6 +37,7 @@ import {
   fetchMenusForOutlet,
   fetchOutlets,
   fetchPosPinsForOutlet,
+  fetchPrintersForOutlet,
   fetchTaxSettings,
   fetchUsers,
   resolveOutletId,
@@ -70,6 +71,7 @@ export interface SyncReport {
   products: { upserted: number; deactivated: number };
   users: { upserted: number };
   pins: { upserted: number; cleared: number };
+  printers: { upserted: number; deactivated: number };
   durationMs: number;
 }
 
@@ -378,6 +380,67 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     }
   });
 
+  // --- Printers -----------------------------------------------------------
+  // Tarik printer master data untuk outlet aktif. Backoffice sudah filter
+  // hanya `is_active`. Kita upsert by id, lalu soft-delete (set active=false)
+  // untuk row di local DB yang tidak ke-return — sama pola dengan products,
+  // supaya history POS settings yang merefer printer lama tetap valid.
+  let printersUpserted = 0;
+  let printersDeactivated = 0;
+  const boPrinters = await fetchPrintersForOutlet(outletId);
+  await db.transaction(async (tx) => {
+    for (const p of boPrinters) {
+      await tx
+        .insert(schema.printers)
+        .values({
+          id: p.id,
+          outletId: p.outlet_id,
+          code: p.code,
+          name: p.name,
+          type: p.type,
+          connection: p.connection,
+          address: p.address,
+          paperWidth: p.paper_width,
+          note: p.note,
+          active: p.is_active,
+          syncedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: schema.printers.id,
+          set: {
+            code: p.code,
+            name: p.name,
+            type: p.type,
+            connection: p.connection,
+            address: p.address,
+            paperWidth: p.paper_width,
+            note: p.note,
+            active: p.is_active,
+            syncedAt: new Date(),
+          },
+        });
+      printersUpserted++;
+    }
+
+    // Soft-delete: printer untuk outlet ini yang sudah tidak ada di
+    // backoffice (di-delete atau di-set non-aktif) → set active=false
+    // di local DB. Tidak DELETE supaya pilihan kasir di localStorage
+    // (printer-id) tetap resolvable saat render.
+    const incomingIds = boPrinters.map((p) => p.id);
+    const localForOutlet = await tx.query.printers.findMany({
+      where: eq(schema.printers.outletId, outletId),
+    });
+    for (const local of localForOutlet) {
+      if (!incomingIds.includes(local.id) && local.active) {
+        await tx
+          .update(schema.printers)
+          .set({ active: false, syncedAt: new Date() })
+          .where(eq(schema.printers.id, local.id));
+        printersDeactivated++;
+      }
+    }
+  });
+
   // Catat timestamp di system_meta supaya `ensureFreshSync` tau apakah perlu
   // revalidate di request berikutnya.
   await markLastSyncedAt(new Date());
@@ -393,6 +456,7 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     products: { upserted: posProducts.length, deactivated },
     users: { upserted: posRelevant.length },
     pins: { upserted: pinsUpserted, cleared: pinsCleared },
+    printers: { upserted: printersUpserted, deactivated: printersDeactivated },
     durationMs: Date.now() - start,
   };
 }

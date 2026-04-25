@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { getOrder, voidOrderItem } from "@/lib/api/orders";
 import { getPosConfig } from "@/lib/api/config";
+import { listPrinters, type PosPrinter } from "@/lib/api/printers";
+import { usePrinterStore } from "@/lib/stores/printer-store";
 import type { Order, OrderItem, OrderType, PaymentMethod } from "@/lib/types";
 import { formatDateTime, formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -43,9 +45,18 @@ export default function ReceiptPage() {
   const [voidTarget, setVoidTarget] = useState<OrderItem | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [voiding, setVoiding] = useState(false);
+  const [printers, setPrinters] = useState<PosPrinter[]>([]);
+  const receiptPrinterId = usePrinterStore((s) => s.receiptPrinterId);
+  const receiptPrinter = printers.find((p) => p.id === receiptPrinterId);
 
   useEffect(() => {
     void getOrder(params.orderId).then(setOrder);
+    // Best-effort: load daftar printer supaya banner "Cetak ke" bisa
+    // tampil dengan code printer terpilih. Kalau gagal (offline / belum
+    // sync), banner di-skip saja — fallback ke "default OS".
+    void listPrinters()
+      .then(setPrinters)
+      .catch(() => {});
   }, [params.orderId]);
 
   const refresh = async () => {
@@ -118,7 +129,24 @@ export default function ReceiptPage() {
         <Button variant="ghost" size="sm" onClick={() => router.push("/order")}>
           <ArrowLeft className="h-4 w-4" /> Kembali
         </Button>
-        <div className="flex flex-1 justify-end gap-2 sm:flex-none">
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
+          {receiptPrinter ? (
+            <Badge
+              variant="secondary"
+              className="font-mono text-[10px]"
+              title={`Cetak ke ${receiptPrinter.name}`}
+            >
+              → {receiptPrinter.code}
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="text-[10px] print-hidden"
+              title="Belum pilih printer di Settings — akan pakai default OS"
+            >
+              Printer default OS
+            </Badge>
+          )}
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4" />
             <span className="hidden sm:inline">Cetak Struk</span>

@@ -96,6 +96,24 @@ export async function getOutletConfig(): Promise<OutletConfig> {
 }
 
 /**
+ * Versi ringan dari `getOutletConfig()` yang cuma return outlet id.
+ * Dipakai endpoint yang butuh filter per-outlet (mis. /api/printers)
+ * tapi tidak butuh detail brand/footer.
+ */
+export async function resolveOutletIdLocal(): Promise<string> {
+  const envOverride = process.env.NEXT_PUBLIC_OUTLET_ID?.trim();
+  if (envOverride) return envOverride;
+  if (isBackofficeModeEnabled()) {
+    try {
+      return await resolveOutletId();
+    } catch {
+      // fallthrough
+    }
+  }
+  return "out_unknown";
+}
+
+/**
  * Ambil tax/service rate dari `system_meta`. Kalau belum sync, fallback
  * ke default 10% PPN + 5% service. Selalu menormalkan ke 0..1 (backoffice
  * simpan dalam persen, mis. 10 → 0.1).

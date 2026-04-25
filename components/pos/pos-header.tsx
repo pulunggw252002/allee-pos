@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   Receipt,
+  Settings,
   Utensils,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/stations", label: "Station", icon: ChefHat },
   { href: "/tables", label: "Open Bills", icon: ClipboardList },
   { href: "/history", label: "Riwayat", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
   { href: "/shift/close", label: "Tutup Shift", icon: Receipt },
 ];
 

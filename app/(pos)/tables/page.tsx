@@ -6,6 +6,7 @@ import {
   Bike,
   ClipboardList,
   CreditCard,
+  Printer,
   RotateCw,
   Search,
   ShoppingBag,
@@ -181,9 +182,37 @@ export default function OpenBillsPage() {
                   <p className="text-lg font-bold tabular">{formatIDR(o.total)}</p>
                 </div>
 
-                <div className="flex items-center justify-end gap-1 pt-1 text-xs text-primary">
-                  <CreditCard className="h-3.5 w-3.5" />
-                  <span>Bayar sekarang →</span>
+                <div className="flex items-center justify-between gap-2 pt-1 text-xs">
+                  {o.isOpenBill ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        // Cetak struk open bill langsung (BELUM DIBAYAR stamp).
+                        // Pakai span+stopPropagation karena card-nya sendiri
+                        // adalah <button> — nested button bukan HTML valid.
+                        e.stopPropagation();
+                        router.push(`/receipt/${o.id}`);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          router.push(`/receipt/${o.id}`);
+                        }
+                      }}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded border px-2 py-1 text-amber-700 transition hover:bg-amber-50"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      <span>Cetak Struk</span>
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <span className="inline-flex items-center gap-1 text-primary">
+                    <CreditCard className="h-3.5 w-3.5" />
+                    <span>Bayar sekarang →</span>
+                  </span>
                 </div>
               </button>
             );

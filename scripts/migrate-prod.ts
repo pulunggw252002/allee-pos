@@ -84,6 +84,24 @@ const migrations: Migration[] = [
       )
     `,
   },
+  {
+    name: "printer",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "printer" (
+        "id" text PRIMARY KEY NOT NULL,
+        "outlet_id" text NOT NULL REFERENCES "outlet"("id") ON DELETE CASCADE,
+        "code" text NOT NULL,
+        "name" text NOT NULL,
+        "type" text NOT NULL DEFAULT 'cashier',
+        "connection" text NOT NULL DEFAULT 'usb',
+        "address" text,
+        "paper_width" integer NOT NULL DEFAULT 32,
+        "note" text,
+        "active" integer NOT NULL DEFAULT 1,
+        "synced_at" integer NOT NULL DEFAULT (unixepoch())
+      )
+    `,
+  },
 ];
 
 /**

@@ -166,6 +166,43 @@ export const products = sqliteTable("product", {
   hppCached: integer("hpp_cached").notNull().default(0),
 });
 
+/**
+ * Printers cache — di-sync dari backoffice GET /api/printers (per outlet).
+ *
+ * Source of truth tetap backoffice: owner CRUD lewat backoffice → webhook →
+ * POS pull ulang. POS hanya read.
+ *
+ * Cara pakai di POS:
+ *  - `/settings` page list semua printer aktif outlet ini, kasir pilih
+ *    maks. 2 untuk routing (1 receipt + 1 kitchen). Pilihan disimpan
+ *    di localStorage karena per-device (1 outlet bisa pakai 2 device POS
+ *    berbeda yang masing-masing tersambung ke 2 hardware printer berbeda).
+ *  - Saat receipt page tekan "Cetak", browser `window.print()` dijalankan
+ *    sambil meta info `code` printer ditampilkan supaya kasir tau struk
+ *    keluar di mana.
+ */
+export const printers = sqliteTable(
+  "printer",
+  {
+    id: text("id").primaryKey(),
+    outletId: text("outlet_id").notNull().references(() => outlets.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    type: text("type", { enum: ["cashier", "kitchen", "bar", "label"] }).notNull().default("cashier"),
+    connection: text("connection", { enum: ["usb", "bluetooth", "network", "other"] }).notNull().default("usb"),
+    address: text("address"),
+    paperWidth: integer("paper_width").notNull().default(32),
+    note: text("note"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    syncedAt: integer("synced_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => ({
+    byOutlet: index("printer_outlet_idx").on(t.outletId),
+  }),
+);
+
 export const tables = sqliteTable("restaurant_table", {
   id: text("id").primaryKey(),
   number: text("number").notNull(),

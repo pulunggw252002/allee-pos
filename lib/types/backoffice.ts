@@ -169,6 +169,34 @@ export interface BackofficeIngredient {
   updated_at: string;
 }
 
+// --- §3.x Printers --------------------------------------------------------
+
+/**
+ * Printer master data dari backoffice. POS memakainya untuk:
+ *  - List opsi yang dipilih kasir (max 2: 1 receipt + 1 kitchen) di Settings.
+ *  - Routing struk pembayaran (cashier) & order ke dapur (kitchen) saat
+ *    receipt page tekan "Cetak".
+ *
+ * Browser-print MVP: POS tidak ngomong langsung ke hardware ESC/POS,
+ * tapi pakai `window.print()` ke printer default OS yang owner sudah
+ * mapping ke device fisik. Field `address` & `connection` di sini
+ * berfungsi sebagai dokumentasi/audit, bukan dipakai code routing.
+ */
+export interface BackofficePrinter {
+  id: string;
+  outlet_id: string;
+  code: string;
+  name: string;
+  type: "cashier" | "kitchen" | "bar" | "label";
+  connection: "usb" | "bluetooth" | "network" | "other";
+  address: string | null;
+  paper_width: number;
+  note: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- §3.9 Tax settings ----------------------------------------------------
 
 export interface BackofficeTaxSettings {

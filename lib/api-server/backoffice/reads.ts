@@ -18,6 +18,7 @@ import type {
   BackofficeIngredient,
   BackofficeMenu,
   BackofficeOutlet,
+  BackofficePrinter,
   BackofficeSession,
   BackofficeTaxSettings,
   BackofficeUser,
@@ -103,6 +104,24 @@ export async function fetchIngredients(): Promise<BackofficeIngredient[]> {
 
 export async function fetchTaxSettings(): Promise<BackofficeTaxSettings> {
   return backofficeFetch<BackofficeTaxSettings>("/api/tax-settings");
+}
+
+// --- Printers -------------------------------------------------------------
+
+/**
+ * Pull printer master data untuk outlet tertentu. Backoffice mendukung
+ * filter `?outlet_id=...` jadi kita kirim langsung — efisien dan tidak
+ * perlu pull semua outlet lalu filter di POS.
+ *
+ * Kita hanya pakai printer yang `is_active = true` di POS UI; toggle
+ * non-aktif di backoffice langsung memunculkan/menghilangkan dari
+ * picker tanpa kasir perlu sync ulang.
+ */
+export async function fetchPrintersForOutlet(outletId: string): Promise<BackofficePrinter[]> {
+  const all = await backofficeFetch<BackofficePrinter[]>(
+    `/api/printers?outlet_id=${encodeURIComponent(outletId)}`,
+  );
+  return all.filter((p) => p.is_active);
 }
 
 // --- Users (untuk PIN login UI / shift) -----------------------------------
