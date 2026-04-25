@@ -454,11 +454,23 @@ function synthesizeEmail(u: BackofficeUser): string {
  * Username untuk login POS. Pakai email-local-part. Better Auth butuh
  * unique. Backoffice tidak expose username eksplisit, jadi kita derive
  * deterministik dari nama via synthesizeEmail.
+ *
+ * Better Auth username plugin default regex hanya allow `[a-zA-Z0-9_.]+`
+ * — TIDAK termasuk hyphen. `synthesizeEmail` slug-nya mengganti
+ * non-word chars dengan `-`, sehingga "Dewi Barista" → "dewi-barista".
+ * Username valid → tukar `-` jadi `_` supaya tetap human-readable
+ * tapi lolos regex Better Auth. Karakter lain di-strip ke `_` juga,
+ * lalu collapse multiple underscore.
  */
 function deriveUsername(u: BackofficeUser): string {
-  const local = synthesizeEmail(u).split("@")[0]?.trim();
-  if (local) return local.toLowerCase();
-  return slugifyName(u.name) || u.id.toLowerCase();
+  const local = synthesizeEmail(u).split("@")[0]?.trim() ?? "";
+  const base = local || slugifyName(u.name) || u.id;
+  return base
+    .toLowerCase()
+    .replace(/[^a-z0-9_.]+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^_+|_+$/g, "")
+    || u.id.toLowerCase().replace(/[^a-z0-9_.]+/g, "_");
 }
 
 /**
