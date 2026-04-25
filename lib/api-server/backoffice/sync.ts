@@ -24,7 +24,7 @@
  *    masih reference produk lama untuk audit history.
  */
 
-import { inArray, notInArray } from "drizzle-orm";
+import { eq, inArray, notInArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import {
   fetchCategories,
@@ -35,6 +35,16 @@ import {
 import { backofficeCategoryToCategory, backofficeMenuToProduct } from "./mappers";
 import { isBackofficeModeEnabled } from "./config";
 import type { BackofficeUser } from "@/lib/types/backoffice";
+
+/** Key untuk menyimpan timestamp last-successful-sync di tabel `system_meta`. */
+const META_KEY_LAST_SYNC = "backoffice.last_synced_at";
+
+/**
+ * Default freshness window. Setelah lewat ini, helper `ensureFreshSync` akan
+ * trigger background revalidate. Boleh di-override per call. 5 menit cukup
+ * agresif untuk MVP — owner ganti harga di backoffice, POS pickup max 5 menit.
+ */
+export const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
 
 export interface SyncReport {
   outletId: string;
@@ -183,6 +193,10 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     }
   });
 
+  // Catat timestamp di system_meta supaya `ensureFreshSync` tau apakah perlu
+  // revalidate di request berikutnya.
+  await markLastSyncedAt(new Date());
+
   return {
     outletId,
     categories: { upserted: posCategories.length },
@@ -190,6 +204,96 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     users: { upserted: posRelevant.length },
     durationMs: Date.now() - start,
   };
+}
+
+/** Simpan timestamp last-sync ke `system_meta`. */
+async function markLastSyncedAt(at: Date): Promise<void> {
+  await db
+    .insert(schema.systemMeta)
+    .values({
+      key: META_KEY_LAST_SYNC,
+      value: at.toISOString(),
+      updatedAt: at,
+    })
+    .onConflictDoUpdate({
+      target: schema.systemMeta.key,
+      set: { value: at.toISOString(), updatedAt: at },
+    });
+}
+
+/**
+ * Ambil timestamp last-sync. null kalau belum pernah sync sukses.
+ */
+export async function getLastSyncedAt(): Promise<Date | null> {
+  const row = await db
+    .select()
+    .from(schema.systemMeta)
+    .where(eq(schema.systemMeta.key, META_KEY_LAST_SYNC))
+    .limit(1);
+  if (!row[0]) return null;
+  const d = new Date(row[0].value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * In-flight sync guard — biar concurrent request yang sama-sama detect
+ * "stale" tidak fire 5 sync paralel ke backoffice. Pakai promise tunggal
+ * di module scope; kalau sync running, calls berikutnya re-use promise itu.
+ */
+let inFlight: Promise<SyncReport> | null = null;
+
+/**
+ * Wrapper sync: returns existing promise kalau sync sedang jalan (de-dupe).
+ */
+async function dedupedSync(): Promise<SyncReport> {
+  if (inFlight) return inFlight;
+  inFlight = syncFromBackoffice().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+/**
+ * Stale-while-revalidate: kalau local catalog stale (last sync > maxAgeMs ATAU
+ * belum pernah sync), trigger sync di background tanpa await. Return segera
+ * supaya request yg invoke ini tidak ng-block. Sync error di-log, tidak throw.
+ *
+ * Pemakaian: di GET /api/products, /api/categories, /api/cashiers — auto-pickup
+ * perubahan backoffice tanpa kasir kudu pencet tombol "sync" manual.
+ *
+ * `awaitFirstRun = true` → kalau **belum pernah** sync sama sekali, await
+ * sync sampai selesai supaya catalog tidak kosong saat first request setelah
+ * deploy. Subsequent stale-revalidate tetap fire-and-forget.
+ */
+export async function ensureFreshSync(opts: {
+  maxAgeMs?: number;
+  awaitFirstRun?: boolean;
+} = {}): Promise<void> {
+  if (!isBackofficeModeEnabled()) return;
+
+  const maxAge = opts.maxAgeMs ?? DEFAULT_FRESHNESS_MS;
+  const last = await getLastSyncedAt();
+  const fresh = last && Date.now() - last.getTime() < maxAge;
+  if (fresh) return;
+
+  const neverSynced = !last;
+  const promise = dedupedSync().catch((e) => {
+    console.warn(
+      "[backoffice] auto-sync gagal (stale-while-revalidate):",
+      e instanceof Error ? e.message : e
+    );
+    return null;
+  });
+
+  if (neverSynced && opts.awaitFirstRun) {
+    // First-run: tunggu sync selesai biar response tidak return catalog
+    // kosong setelah deploy fresh.
+    await promise;
+  } else {
+    // Background: jangan ng-block request. Promise di-fire, error di-handle
+    // di .catch() di atas.
+    void promise;
+  }
 }
 
 /**

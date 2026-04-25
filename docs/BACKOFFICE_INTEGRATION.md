@@ -48,6 +48,9 @@ curl -X POST https://pos.allee.example.com/api/backoffice/sync \
 
 Atau sediakan tombol di UI settings (TODO Phase 2).
 
+> **Catatan:** sync awal **opsional** kalau cron sudah jalan. POS juga
+> akan **auto-sync first-run** saat ada request ke `/api/products` (lihat §4).
+
 Response:
 ```json
 {
@@ -116,6 +119,41 @@ Failure di-log; perlu retry queue di Phase 2.
 | `User.role: kasir` etc. | `role: cashier` | |
 
 ---
+
+## 3.5. Auto-sync (zero manual intervention)
+
+Tiga lapis auto-sync sehingga owner di backoffice ganti harga / tambah menu,
+POS pickup tanpa kasir kudu tekan apa-apa:
+
+| Layer | Trigger | Frekuensi |
+|---|---|---|
+| **A. Vercel Cron** | jadwal `*/15 * * * *` (lihat `vercel.json`) | tiap 15 menit |
+| **B. Stale-while-revalidate** | request ke `/api/products` / `/api/categories` / `/api/cashiers`, kalau last sync > 5 menit | per request (background, non-blocking) |
+| **C. First-run await** | request pertama setelah deploy fresh (last sync = null) | sekali |
+
+Layer A butuh env `CRON_SECRET` di-set (Vercel auto-attach
+`Authorization: Bearer $CRON_SECRET`). Layer B & C tidak butuh secret —
+internal in-process. Concurrent stale detect di-dedupe pakai single
+in-flight promise di module scope (tidak fire 5 sync paralel).
+
+Window staleness 5 menit di-tetapkan di `lib/api-server/backoffice/sync.ts`
+(`DEFAULT_FRESHNESS_MS`). Naikkan kalau backoffice load tinggi, turunkan
+kalau owner sering ganti harga.
+
+## 3.6. Auto-push (write-side)
+
+Kasir tidak perlu trigger apapun — semua transaksi & void otomatis
+ter-push:
+
+| Aksi POS | Endpoint backoffice yang di-call | Mode |
+|---|---|---|
+| `POST /api/orders/:id/pay` (sukses) | `POST /api/transactions` | best-effort, fire-and-forget di handler |
+| `POST /api/orders/:id/items/:itemId/void` | `POST /api/transactions/:id/items/:idx/void` | best-effort |
+
+Best-effort = error backoffice (network, 5xx, timeout) **tidak ng-block**
+respon ke kasir. Failure di-log via `console.warn`. Local DB POS sudah
+commit dulu sebelum push, jadi rollback otomatis saat retry sync (jika
+ada queue di Phase 2).
 
 ## 4. Cara kerja saat runtime
 

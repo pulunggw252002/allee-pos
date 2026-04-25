@@ -57,6 +57,21 @@ export const verifications = sqliteTable("verification", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
+/* ---------- System / sync metadata ---------- */
+
+/**
+ * Key-value store untuk metadata sistem yg butuh persistence antar cold-start
+ * (mis. "last_synced_at" agar SWR-style auto-sync tidak trigger sync di setiap
+ * cold-start tapi tau persis kapan terakhir sync sukses).
+ */
+export const systemMeta = sqliteTable("system_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 /* ---------- Catalog (pushed down from backoffice) ---------- */
 
 export const stations = sqliteTable("station", {

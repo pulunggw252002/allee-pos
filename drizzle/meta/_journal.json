@@ -15,6 +15,13 @@
       "when": 1777093183732,
       "tag": "0001_easy_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1777096152830,
+      "tag": "0002_flowery_piledriver",
+      "breakpoints": true
     }
   ]
 }
