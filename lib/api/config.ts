@@ -14,8 +14,15 @@ import type { Cashier, PaymentMethod } from "@/lib/types";
 import { apiFetch } from "./client";
 
 export interface OutletConfig {
+  /** Stable id outlet (mis. "out_dago"). Optional kalau POS belum sync ke backoffice. */
+  id?: string;
   brandName: string;
-  subtitle: string;
+  /** Tagline kecil di bawah brand name di receipt. Optional. */
+  subtitle?: string;
+  /** Optional — di-render di header receipt kalau ada. */
+  address?: string;
+  city?: string;
+  phone?: string;
   receiptFooter: string[];
   /** Desimal. 0.1 = 10%. */
   taxRate: number;
@@ -41,11 +48,16 @@ export interface PosConfig {
   itemDoneRoles: readonly Cashier["role"][];
 }
 
+// Fallback minimal yang dipakai SEBELUM /api/pos/config selesai dimuat.
+// Brand & footer SENGAJA generic — sumber otoritatif adalah backoffice
+// (di-load dari local DB lewat sync). POS tidak tahu mau jadi outlet apa
+// sampai loadPosConfig() selesai → outlet mana pun bisa pakai build yang
+// sama (franchise model).
 const DEFAULT_POS_CONFIG: PosConfig = {
   outlet: {
-    brandName: "ALLEE SOCIAL HOUSE",
-    subtitle: "Coffee & Kitchen",
-    receiptFooter: ["Terima kasih ☕", "Sampai jumpa kembali!"],
+    brandName: "POS",
+    subtitle: undefined,
+    receiptFooter: [],
     taxRate: 0.1,
     serviceRate: 0.05,
   },

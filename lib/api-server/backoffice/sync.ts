@@ -35,7 +35,9 @@ import { db, schema } from "@/lib/db";
 import {
   fetchCategories,
   fetchMenusForOutlet,
+  fetchOutlets,
   fetchPosPinsForOutlet,
+  fetchTaxSettings,
   fetchUsers,
   resolveOutletId,
 } from "./reads";
@@ -47,6 +49,13 @@ import type { BackofficeUser } from "@/lib/types/backoffice";
 const META_KEY_LAST_SYNC = "backoffice.last_synced_at";
 
 /**
+ * Key untuk simpan tax settings (PPN + service charge percent). Disimpan di
+ * `system_meta` sebagai JSON supaya schema fixed dan kita tidak perlu
+ * tabel baru — singleton yang dibaca order route saat hitung pajak.
+ */
+const META_KEY_TAX = "backoffice.tax_settings";
+
+/**
  * Default freshness window. Setelah lewat ini, helper `ensureFreshSync` akan
  * trigger background revalidate. Boleh di-override per call. 5 menit cukup
  * agresif untuk MVP — owner ganti harga di backoffice, POS pickup max 5 menit.
@@ -55,6 +64,8 @@ export const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
 
 export interface SyncReport {
   outletId: string;
+  outlets: { upserted: number };
+  taxSettings: { ppnPercent: number; servicePercent: number };
   categories: { upserted: number };
   products: { upserted: number; deactivated: number };
   users: { upserted: number };
@@ -72,6 +83,66 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
   }
   const start = Date.now();
   const outletId = await resolveOutletId();
+
+  // --- Outlets cache --------------------------------------------------------
+  // Sync semua outlet (bukan cuma yang aktif POS ini) supaya kalau besok kita
+  // mau implement multi-outlet switcher di POS, data sudah siap. Brand name,
+  // address, dst. dipakai untuk render receipt — TIDAK boleh hardcoded.
+  const boOutlets = await fetchOutlets();
+  await db.transaction(async (tx) => {
+    for (const o of boOutlets) {
+      await tx
+        .insert(schema.outlets)
+        .values({
+          id: o.id,
+          name: o.name,
+          // Backoffice belum expose brand_name eksplisit — pakai `name` outlet
+          // sebagai brand fallback. Bisa di-extend kalau backoffice nambah field.
+          brandName: o.name,
+          address: o.address ?? null,
+          city: o.city ?? null,
+          phone: o.phone ?? null,
+          openingHours: o.opening_hours ?? null,
+          // receiptFooter di-set dari env atau default kalau backoffice belum
+          // expose. Kalau ada, jangan overwrite saat conflict (preserve user
+          // customization yang mungkin di-set lokal).
+          receiptFooter: null,
+          active: o.is_active,
+          syncedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: schema.outlets.id,
+          set: {
+            name: o.name,
+            brandName: o.name,
+            address: o.address ?? null,
+            city: o.city ?? null,
+            phone: o.phone ?? null,
+            openingHours: o.opening_hours ?? null,
+            active: o.is_active,
+            syncedAt: new Date(),
+          },
+        });
+    }
+  });
+
+  // --- Tax settings --------------------------------------------------------
+  // Backoffice singleton tax_settings = source of truth untuk PPN & service
+  // charge. POS simpan sebagai JSON di system_meta supaya order route bisa
+  // baca tanpa join — diparsing oleh helper `getTaxSettings()`.
+  const tax = await fetchTaxSettings();
+  const taxJson = JSON.stringify({
+    ppn_percent: tax.ppn_percent,
+    service_charge_percent: tax.service_charge_percent,
+    updated_at: tax.updated_at,
+  });
+  await db
+    .insert(schema.systemMeta)
+    .values({ key: META_KEY_TAX, value: taxJson, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.systemMeta.key,
+      set: { value: taxJson, updatedAt: new Date() },
+    });
 
   // --- Categories -----------------------------------------------------------
   const boCategories = await fetchCategories();
@@ -214,7 +285,23 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
   //
   // Important: `account.id` di Better Auth biasanya = `userId` (1 user 1
   // credential row) — kita pakai pola yang sama supaya idempotent.
-  const pins = await fetchPosPinsForOutlet(outletId);
+  //
+  // Graceful degrade: kalau POS_WEBHOOK_SECRET belum di-set (mis. POS
+  // dideploy duluan sebelum env webhook di-share), fetch ini akan throw —
+  // kita catch dan SKIP PIN sync supaya catalog/users tetap ke-sync.
+  // Owner bisa set env nanti, sync ulang, dan PIN-nya akan ke-pickup.
+  let pins: Awaited<ReturnType<typeof fetchPosPinsForOutlet>> = [];
+  let pinSyncError: string | null = null;
+  try {
+    pins = await fetchPosPinsForOutlet(outletId);
+  } catch (e) {
+    pinSyncError = e instanceof Error ? e.message : String(e);
+    console.warn(
+      "[backoffice] PIN sync di-skip:",
+      pinSyncError,
+      "— catalog & users tetap ke-sync. Set POS_WEBHOOK_SECRET di POS supaya PIN ikut sync.",
+    );
+  }
   // Filter pin yang user-nya benar-benar relevan untuk POS (sudah di-sync
   // ke `user` table). Hash untuk user yang tidak relevan (mis. owner) di-skip.
   const relevantUserIds = new Set(posRelevant.map((u) => u.id));
@@ -222,6 +309,12 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
 
   let pinsUpserted = 0;
   let pinsCleared = 0;
+  // Kalau fetch PIN gagal (mis. POS_WEBHOOK_SECRET belum di-set), JANGAN
+  // jalankan blok upsert + cleanup — tanpa data otoritatif kita bisa
+  // accidentally hapus semua credential row yang masih valid.
+  if (pinSyncError) {
+    // skip seluruh blok PIN sync
+  } else
   await db.transaction(async (tx) => {
     for (const pin of pinsForPos) {
       // Cek apakah user ini sudah punya credential account row.
@@ -282,6 +375,11 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
 
   return {
     outletId,
+    outlets: { upserted: boOutlets.length },
+    taxSettings: {
+      ppnPercent: tax.ppn_percent,
+      servicePercent: tax.service_charge_percent,
+    },
     categories: { upserted: posCategories.length },
     products: { upserted: posProducts.length, deactivated },
     users: { upserted: posRelevant.length },

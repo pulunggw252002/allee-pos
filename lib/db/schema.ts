@@ -74,6 +74,35 @@ export const systemMeta = sqliteTable("system_meta", {
 
 /* ---------- Catalog (pushed down from backoffice) ---------- */
 
+/**
+ * Outlets cache — di-sync dari backoffice GET /api/outlets. POS biasanya cuma
+ * pakai 1 outlet aktif (resolved via NEXT_PUBLIC_OUTLET_ID env), tapi tabel
+ * ini menyimpan SEMUA outlet biar:
+ *  - Owner / multi-outlet user bisa switch di POS.
+ *  - Receipt header & footer di-render dari data outlet aktif (brand, address,
+ *    phone, dll), bukan dari hardcoded `pos-config.ts`.
+ *  - Tax/service rate per-outlet (kalau backoffice mau extend) tinggal nambah
+ *    kolom di sini.
+ *
+ * Source of truth tetap backoffice. POS hanya read (sync). Mutation di POS
+ * tidak boleh — kalau Owner edit outlet, dia lewat backoffice → webhook → sync.
+ */
+export const outlets = sqliteTable("outlet", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  brandName: text("brand_name"),
+  address: text("address"),
+  city: text("city"),
+  phone: text("phone"),
+  openingHours: text("opening_hours"),
+  /** JSON array of strings — line-by-line receipt footer. */
+  receiptFooter: text("receipt_footer"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  syncedAt: integer("synced_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 export const stations = sqliteTable("station", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

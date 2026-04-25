@@ -10,7 +10,7 @@
  */
 
 import { backofficeFetch } from "./client";
-import { isBackofficeModeEnabled } from "./config";
+import { isBackofficeModeEnabled, readBackofficeConfig } from "./config";
 import { posOrderTypeToBackoffice } from "./mappers";
 import type {
   BackofficeCreateTransactionInput,
@@ -93,45 +93,69 @@ export async function pushTransaction(input: PushTransactionInput): Promise<Back
 
 /**
  * Void satu item di backoffice. Di-call setelah POS sukses void lokal.
- * `transactionId` = order.id POS (= tx.id backoffice via push).
- * `itemId` = order_item.id POS — POS push items dengan id POS lewat ... eh, tapi
  *
- * **BIG GOTCHA:** kontrak `POST /api/transactions` tidak menerima item.id —
+ * Background: kontrak `POST /api/transactions` tidak menerima item.id —
  * server backoffice generate sendiri (`ti_*`). Jadi `order_item.id` POS ≠
- * `transaction_item.id` backoffice. Untuk void, POS harus:
- *   1) Fetch transaction dari backoffice (GET /api/transactions/:id) untuk
- *      mendapatkan mapping item POS → item backoffice via match (menu_id +
- *      name_snapshot + qty), ATAU
- *   2) Pakai endpoint void shortcut `/api/transactions/:id/void` (void semua
- *      item) — tidak ideal karena POS support void per item.
+ * `transaction_item.id` backoffice. Untuk void per-item kita harus mapping
+ * dulu via GET /api/transactions/:id.
  *
- * Untuk MVP integrasi, kita pilih (1) tapi simplify: cocokkan posisi index
- * (item ke-N di POS = item ke-N di backoffice — server insert urut sesuai
- * payload). Ini valid selama POS tidak reorder items setelah push.
+ * Strategy mapping (kuat → lemah):
+ *   1) Match by (menu_id, name_snapshot, qty, unit_price) — paling kuat.
+ *      Backoffice tidak reorder items, jadi tuple ini unique-per-tx.
+ *   2) Fallback ke index — kalau di tx ada banyak item identik, kita pakai
+ *      index "ke-N kemunculan" dari item match candidate.
+ *
+ * Index sederhana lama (item ke-N keseluruhan) RENTAN: kalau backoffice
+ * suatu hari menambah pre-processing yang menggabung items, urutan bisa
+ * shift. Tuple match jauh lebih tahan banting.
  */
-export async function pushVoidItem(opts: {
+export interface PushVoidItemInput {
   transactionId: string;
-  /** Index item POS di payload original (0-based). */
-  itemIndex: number;
-  /** Sebagai cross-check: nama item yang di-void. */
-  expectedItemName: string;
+  /** Identitas item POS yang di-void. */
+  posItem: {
+    /** product.id POS = menu_id backoffice. */
+    productId: string;
+    productName: string;
+    unitPrice: number;
+    qty: number;
+  };
+  /**
+   * Index "ke-N kemunculan" di POS items dengan tuple identik. Untuk
+   * tx normal (item-item beda) selalu 0. Hanya relevan kalau ada
+   * duplikat tuple (mis. dua "Ice Latte 25k qty 1" di tx yang sama).
+   */
+  duplicateIndex?: number;
   reason: string;
-}): Promise<BackofficeVoidItemResponse> {
-  // Fetch transaction backoffice untuk dapat list item id-nya.
+}
+
+export async function pushVoidItem(
+  opts: PushVoidItemInput,
+): Promise<BackofficeVoidItemResponse> {
   const tx = await backofficeFetch<BackofficeTransaction>(
-    `/api/transactions/${encodeURIComponent(opts.transactionId)}`
+    `/api/transactions/${encodeURIComponent(opts.transactionId)}`,
   );
-  const target = tx.items[opts.itemIndex];
-  if (!target) {
+
+  const candidates = tx.items.filter(
+    (it) =>
+      it.menu_id === opts.posItem.productId &&
+      it.name_snapshot === opts.posItem.productName &&
+      it.quantity === opts.posItem.qty &&
+      it.unit_price === opts.posItem.unitPrice &&
+      !it.voided_at, // skip yang sudah voided
+  );
+
+  if (candidates.length === 0) {
     throw new Error(
-      `Item index ${opts.itemIndex} tidak ada di transaksi backoffice (length=${tx.items.length})`
+      `Item "${opts.posItem.productName}" (menu_id=${opts.posItem.productId}, qty=${opts.posItem.qty}) ` +
+        `tidak ditemukan di transaksi backoffice — kemungkinan tx ini belum ke-push, atau item sudah voided.`,
     );
   }
-  // Defensive sanity check — kalau urutan beda, jangan asal void item lain.
-  if (target.name_snapshot !== opts.expectedItemName) {
+
+  const dup = opts.duplicateIndex ?? 0;
+  const target = candidates[dup];
+  if (!target) {
     throw new Error(
-      `Item mismatch saat void: expected "${opts.expectedItemName}", got "${target.name_snapshot}". ` +
-        `Backoffice mungkin reorder items — perlu mapping eksplisit.`
+      `Duplicate index ${dup} di luar jangkauan (cuma ada ${candidates.length} match).`,
     );
   }
 
@@ -140,7 +164,7 @@ export async function pushVoidItem(opts: {
     {
       method: "POST",
       json: { reason: opts.reason },
-    }
+    },
   );
 }
 
@@ -194,6 +218,102 @@ export async function pushVoidTransactionBestEffort(opts: Parameters<typeof push
     return await pushVoidTransaction(opts);
   } catch (e) {
     console.warn("[backoffice] pushVoidTransaction gagal (best-effort):", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+// --- Shift summary push ---------------------------------------------------
+
+/**
+ * Payload untuk POST /api/internal/pos-shifts di backoffice.
+ *
+ * Auth-nya pakai bearer `POS_WEBHOOK_SECRET` (bukan session backoffice),
+ * sama mekanisme dengan endpoint internal pos-pins. Alasannya: shift close
+ * di-trigger dari POS server sendiri (bukan via UI yang punya session
+ * backoffice), jadi kita pakai shared secret server-to-server.
+ */
+export interface PushShiftSummaryInput {
+  /** PK = id shift POS — idempotency key. */
+  id: string;
+  outletId: string;
+  cashierUserId: string;
+  cashierName: string;
+  openingCash: number;
+  actualCash: number;
+  expectedCash: number;
+  cashDifference: number;
+  totalRevenue: number;
+  orderCount: number;
+  /** { cash, qris, card, transfer } in IDR. */
+  breakdown: Record<string, number>;
+  note?: string | null;
+  openedAt: string;
+  closedAt: string;
+}
+
+export interface PushShiftSummaryResponse {
+  ok: true;
+  id: string;
+  synced_at: string;
+}
+
+export async function pushShiftSummary(
+  input: PushShiftSummaryInput,
+): Promise<PushShiftSummaryResponse> {
+  const cfg = readBackofficeConfig();
+  const secret = process.env.POS_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new Error(
+      "POS_WEBHOOK_SECRET belum di-set di POS — tidak bisa push shift summary",
+    );
+  }
+  const url = `${cfg.apiUrl}/api/internal/pos-shifts`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+      Accept: "application/json",
+      Origin: cfg.apiUrl,
+    },
+    body: JSON.stringify({
+      id: input.id,
+      outlet_id: input.outletId,
+      cashier_user_id: input.cashierUserId,
+      cashier_name: input.cashierName,
+      opening_cash: input.openingCash,
+      actual_cash: input.actualCash,
+      expected_cash: input.expectedCash,
+      cash_difference: input.cashDifference,
+      total_revenue: input.totalRevenue,
+      order_count: input.orderCount,
+      breakdown: input.breakdown,
+      note: input.note ?? null,
+      opened_at: input.openedAt,
+      closed_at: input.closedAt,
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Push shift summary ke backoffice gagal (${res.status}): ${body.slice(0, 200)}`,
+    );
+  }
+  return (await res.json()) as PushShiftSummaryResponse;
+}
+
+export async function pushShiftSummaryBestEffort(
+  input: PushShiftSummaryInput,
+): Promise<PushShiftSummaryResponse | null> {
+  if (!isBackofficeModeEnabled()) return null;
+  try {
+    return await pushShiftSummary(input);
+  } catch (e) {
+    console.warn(
+      "[backoffice] pushShiftSummary gagal (best-effort):",
+      e instanceof Error ? e.message : e,
+    );
     return null;
   }
 }

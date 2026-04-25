@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db, schema } from "@/lib/db";
 import { ApiError, handle, ok } from "@/lib/api-server/response";
 import { requireSession } from "@/lib/api-server/session";
-import { SERVER_POS_CONFIG } from "@/lib/api-server/pos-config";
+import { getTaxRates } from "@/lib/api-server/runtime-config";
 import { mapFullOrder } from "@/lib/api-server/order-mapper";
 import { isBackofficeModeEnabled } from "@/lib/api-server/backoffice/config";
 import { pushVoidItemBestEffort } from "@/lib/api-server/backoffice/writes";
@@ -46,7 +46,8 @@ export async function POST(
     const { reason } = bodySchema.parse(await req.json());
 
     const voidedAt = new Date().toISOString();
-    const { taxRate, serviceRate } = SERVER_POS_CONFIG.outlet;
+    // Tax/service rate di-resolve dari runtime config (synced dari backoffice).
+    const { taxRate, serviceRate } = await getTaxRates();
 
     await db.transaction(async (tx) => {
       const order = await tx.query.orders.findFirst({
@@ -127,30 +128,58 @@ export async function POST(
     if (!fresh) throw new ApiError(500, "Gagal mengambil order setelah void");
 
     // --- Best-effort push void ke backoffice ------------------------------
-    // Backoffice generate item-id sendiri (≠ POS item.id), jadi kita
-    // identifikasi item via INDEX-nya di array items POS — server backoffice
-    // insert items urut sesuai payload kita di POST /api/transactions.
-    // Untuk amannya kita kirim juga `expectedItemName` sebagai cross-check.
+    // Identifikasi item via tuple (menu_id, name, qty, unit_price) — bukan
+    // index. Tuple match tahan banting walau backoffice reorder items.
+    //
+    // duplicateIndex: kalau di tx POS ada banyak item dengan tuple identik
+    // (mis. dua "Ice Latte 25k qty 1"), kita pakai posisi ke-N. Hitung
+    // dengan filter items POS dengan tuple yang sama, lalu temukan index
+    // item target di list itu.
+    let syncStatus: "ok" | "failed" | "skipped" = "skipped";
+    let syncError: string | null = null;
     if (isBackofficeModeEnabled() && fresh.status === "paid") {
       try {
-        // Sort items by id (sama dengan urutan saat push pertama kali —
-        // POS pakai newId() yang monotonic dengan timestamp).
-        const sorted = [...fresh.items].sort((a, b) => a.id.localeCompare(b.id));
-        const idx = sorted.findIndex((it) => it.id === itemId);
-        const target = sorted[idx];
-        if (idx >= 0 && target) {
-          await pushVoidItemBestEffort({
+        const target = fresh.items.find((it) => it.id === itemId);
+        if (target) {
+          const sameTuple = fresh.items.filter(
+            (it) =>
+              it.productId === target.productId &&
+              it.productName === target.productName &&
+              it.qty === target.qty &&
+              it.unitPrice === target.unitPrice,
+          );
+          // Stable order: id POS monotonic — sort biar duplicateIndex deterministik.
+          sameTuple.sort((a, b) => a.id.localeCompare(b.id));
+          const dupIdx = sameTuple.findIndex((it) => it.id === itemId);
+          const result = await pushVoidItemBestEffort({
             transactionId: id,
-            itemIndex: idx,
-            expectedItemName: target.productName,
+            posItem: {
+              productId: target.productId,
+              productName: target.productName,
+              unitPrice: target.unitPrice,
+              qty: target.qty,
+            },
+            duplicateIndex: Math.max(0, dupIdx),
             reason,
           });
+          if (result === null) {
+            syncStatus = "failed";
+            syncError = "Backoffice unreachable atau push void gagal — cek server log.";
+          } else {
+            syncStatus = "ok";
+          }
         }
       } catch (e) {
-        console.warn("[backoffice] push void item gagal:", e instanceof Error ? e.message : e);
+        syncStatus = "failed";
+        syncError = e instanceof Error ? e.message : String(e);
+        console.warn("[backoffice] push void item gagal:", syncError);
       }
     }
 
-    return ok(mapFullOrder(fresh));
+    return ok({
+      ...mapFullOrder(fresh),
+      sync_status: syncStatus,
+      sync_error: syncError,
+    });
   });
 }

@@ -4,7 +4,7 @@ import { db, schema } from "@/lib/db";
 import { ApiError, handle, ok } from "@/lib/api-server/response";
 import { requireSession } from "@/lib/api-server/session";
 import { newId } from "@/lib/api-server/ids";
-import { SERVER_POS_CONFIG } from "@/lib/api-server/pos-config";
+import { getTaxRates } from "@/lib/api-server/runtime-config";
 import { mapFullOrder } from "@/lib/api-server/order-mapper";
 
 const createSchema = z.object({
@@ -100,7 +100,10 @@ export async function POST(req: Request) {
     const subtotal = items.reduce((s, it) => s + it.unitPrice * it.qty, 0);
     const discount = body.discount ?? 0;
     const afterDiscount = Math.max(0, subtotal - discount);
-    const { taxRate, serviceRate } = SERVER_POS_CONFIG.outlet;
+    // Tax & service di-resolve dinamis dari config yang di-sync dari backoffice
+    // — TIDAK hardcode di server. Kalau backoffice belum di-sync, helper return
+    // default supaya order calc tetap jalan (graceful degrade).
+    const { taxRate, serviceRate } = await getTaxRates();
     const tax = Math.round(afterDiscount * taxRate);
     const service = Math.round(afterDiscount * serviceRate);
     const total = afterDiscount + tax + service;

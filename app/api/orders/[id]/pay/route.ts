@@ -86,6 +86,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // saat ini menjalankan inline (tidak di background queue) supaya kalau
     // langsung sukses, response payment udah ter-sync. Untuk reliability
     // production, idealnya pindah ke queue worker — tapi MVP cukup.
+    //
+    // Sync status di-surface di response (`sync_status: "ok"|"failed"|"skipped"`)
+    // supaya UI bisa kasih banner kalau push gagal — kasir bisa lapor admin
+    // untuk re-sync manual. TIDAK silent-fail.
+    let syncStatus: "ok" | "failed" | "skipped" = "skipped";
+    let syncError: string | null = null;
     if (fresh && isBackofficeModeEnabled()) {
       try {
         const activeItems = fresh.items.filter((it) => !it.voidedAt);
@@ -99,7 +105,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         const hppMap = new Map(prods.map((p) => [p.id, p.hppCached ?? 0]));
 
         const outletId = await resolveOutletId();
-        await pushTransactionBestEffort({
+        const result = await pushTransactionBestEffort({
           id: fresh.id,
           outletId,
           paymentMethod: fresh.payment?.method ?? body.method,
@@ -120,13 +126,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             subtotal: it.unitPrice * it.qty,
           })),
         });
+        if (result === null) {
+          syncStatus = "failed";
+          syncError = "Backoffice unreachable atau push transaction gagal — cek server log.";
+        } else {
+          syncStatus = "ok";
+        }
       } catch (e) {
         // *BestEffort sudah swallow, ini guard untuk error di luar
         // (mis. resolveOutletId throw karena config rusak).
-        console.warn("[backoffice] push setelah pay gagal:", e instanceof Error ? e.message : e);
+        syncStatus = "failed";
+        syncError = e instanceof Error ? e.message : String(e);
+        console.warn("[backoffice] push setelah pay gagal:", syncError);
       }
     }
 
-    return ok(mapFullOrder(fresh!));
+    return ok({
+      ...mapFullOrder(fresh!),
+      sync_status: syncStatus,
+      sync_error: syncError,
+    });
   });
 }
