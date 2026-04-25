@@ -67,7 +67,12 @@ async function signIn(): Promise<CachedSession> {
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      // Better Auth menolak request tanpa Origin (`MISSING_OR_NULL_ORIGIN`).
+      // Set Origin = baseURL backoffice supaya lolos CSRF guard.
+      Origin: cfg.apiUrl,
+    },
     body: JSON.stringify({
       email: cfg.serviceEmail,
       password: cfg.servicePassword,
@@ -140,6 +145,7 @@ async function doFetch(
   init: BackofficeFetchInit,
   cookieHeader: string
 ): Promise<Response> {
+  const cfg = readBackofficeConfig();
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(),
@@ -152,6 +158,9 @@ async function doFetch(
         "Content-Type": "application/json",
         Cookie: cookieHeader,
         Accept: "application/json",
+        // Match sign-in: kasih Origin biar konsisten dengan trustedOrigins
+        // backoffice (Better Auth pakai ini buat sebagian guard).
+        Origin: cfg.apiUrl,
       },
       body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
       cache: "no-store",
