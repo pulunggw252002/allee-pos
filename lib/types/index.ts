@@ -45,6 +45,14 @@ export interface OrderItem {
   note?: string;
   stationId: ID;
   status: OrderItemStatus;
+  /** ISO timestamp ketika item ini di-void. null/undefined = item aktif. */
+  voidedAt?: string;
+  /** User ID yang melakukan void. */
+  voidedBy?: string;
+  /** Nama kasir/supervisor yang melakukan void (cached untuk display). */
+  voidedByName?: string;
+  /** Alasan void, untuk audit. */
+  voidReason?: string;
 }
 
 export interface OrderPayment {

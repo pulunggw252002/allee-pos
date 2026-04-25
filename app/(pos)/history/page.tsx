@@ -211,8 +211,10 @@ function HistoryRow({ order, onOpen }: { order: Order; onOpen: () => void }) {
         ? `${order.deliveryProvider}${order.customerName ? ` · ${order.customerName}` : ""}`
         : (order.customerName ?? "Takeaway");
   const isVoid = order.status === "void";
+  const voidedItemsCount = order.items.filter((it) => it.voidedAt).length;
+  const hasItemVoids = voidedItemsCount > 0 && !isVoid;
   const itemsPreview = order.items
-    .map((it) => `${it.qty}× ${it.productName}`)
+    .map((it) => `${it.qty}× ${it.productName}${it.voidedAt ? " (void)" : ""}`)
     .join(", ");
 
   return (
@@ -256,6 +258,14 @@ function HistoryRow({ order, onOpen }: { order: Order; onOpen: () => void }) {
             {order.isOpenBill && (
               <Badge variant="warning" className="h-5 text-[10px]">
                 OPEN BILL
+              </Badge>
+            )}
+            {hasItemVoids && (
+              <Badge
+                variant="outline"
+                className="h-5 border-destructive/40 bg-destructive/10 text-[10px] text-destructive"
+              >
+                <Ban className="h-3 w-3" /> {voidedItemsCount} item void
               </Badge>
             )}
           </div>

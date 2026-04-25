@@ -148,6 +148,13 @@ export const orderItems = sqliteTable(
     note: text("note"),
     stationId: text("station_id").notNull().references(() => stations.id, { onDelete: "restrict" }),
     status: text("status", { enum: ["pending", "ongoing", "serve", "done"] }).notNull().default("pending"),
+    // Per-item void: bahan tetap kepakai (tidak rollback stock), tapi nilai item
+    // dikeluarkan dari subtotal/tax/service/total order — sehingga juga tidak
+    // masuk revenue & profit di shift summary / history.
+    voidedAt: text("voided_at"),
+    voidedBy: text("voided_by"),
+    voidedByName: text("voided_by_name"),
+    voidReason: text("void_reason"),
   },
   (t) => ({
     byOrder: index("order_item_order_idx").on(t.orderId),

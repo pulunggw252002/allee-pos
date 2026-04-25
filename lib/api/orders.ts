@@ -81,3 +81,19 @@ export async function listActiveStationItems(): Promise<
 export async function voidOrder(id: string): Promise<void> {
   await apiFetch<{ ok: true }>(`/api/orders/${id}`, { method: "DELETE" });
 }
+
+/**
+ * Void satu item dalam order. Bahan/stock tidak di-rollback (item sudah
+ * diolah / sudah keluar), tapi nilai item dikeluarkan dari subtotal/total
+ * order — sehingga juga tidak masuk revenue & profit.
+ */
+export async function voidOrderItem(params: {
+  orderId: string;
+  itemId: string;
+  reason: string;
+}): Promise<Order> {
+  return apiFetch<Order>(
+    `/api/orders/${params.orderId}/items/${params.itemId}/void`,
+    { method: "POST", json: { reason: params.reason } }
+  );
+}

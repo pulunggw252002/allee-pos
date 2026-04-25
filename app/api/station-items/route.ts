@@ -16,6 +16,8 @@ export async function GET() {
       const mapped = mapFullOrder(o);
       for (const it of mapped.items) {
         if (it.status === "done") continue;
+        // Skip item yang sudah di-void per item — tidak perlu dimasak ulang.
+        if (it.voidedAt) continue;
         rows.push({ order: mapped, item: it });
       }
     }
