@@ -34,6 +34,9 @@ export async function PATCH(
       where: eq(schema.orderItems.id, itemId),
     });
     if (!item || item.orderId !== id) throw new ApiError(404, "Item tidak ditemukan");
+    // Item yang sudah di-void tidak boleh berubah status lagi (sudah "done"
+    // sebagai sentinel, tapi guard eksplisit lebih jelas error message-nya).
+    if (item.voidedAt) throw new ApiError(409, "Item sudah di-void");
 
     // Guard: hanya maju selangkah
     const curIdx = STATUS_ORDER.indexOf(item.status as Status);

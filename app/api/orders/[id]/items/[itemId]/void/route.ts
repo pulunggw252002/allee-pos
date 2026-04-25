@@ -22,10 +22,17 @@ const bodySchema = z.object({
  * - Setelah void: subtotal/tax/service/total order dihitung ulang dari
  *   item-item yang masih aktif. Stock/bahan tidak di-rollback (sesuai
  *   permintaan: bahan tetap berkurang).
+ * - Item yang di-void juga di-mark `status = "done"` supaya tidak ditarik
+ *   oleh KDS / aggregation queries yang memfilter berdasarkan status saja.
  * - Payment record (`amount`/`tendered`/`change`) TIDAK diubah — itu
  *   catatan historis pembayaran. Selisih antara payment.amount dengan
  *   order.total baru = nilai void (untuk dikembalikan ke pelanggan atau
  *   diketahui sebagai selisih kas saat tutup shift).
+ *
+ * Concurrency:
+ * - Read order + recompute total dilakukan DI DALAM transaction supaya
+ *   dua void paralel pada item berbeda tidak meng-clobber total satu sama
+ *   lain (race condition).
  */
 export async function POST(
   req: Request,
@@ -36,53 +43,62 @@ export async function POST(
     const { id, itemId } = await ctx.params;
     const { reason } = bodySchema.parse(await req.json());
 
-    const order = await db.query.orders.findFirst({
-      where: eq(schema.orders.id, id),
-      with: { items: true },
-    });
-    if (!order) throw new ApiError(404, "Order tidak ditemukan");
-    if (order.status === "void") {
-      throw new ApiError(409, "Order sudah di-void seluruhnya");
-    }
-
-    const target = order.items.find((it) => it.id === itemId);
-    if (!target) throw new ApiError(404, "Item tidak ditemukan dalam order ini");
-    if (target.voidedAt) throw new ApiError(409, "Item sudah di-void");
-
-    // Cegah void semua item — minta user pakai void order saja.
-    const remainingActive = order.items.filter(
-      (it) => it.id !== itemId && !it.voidedAt
-    );
-    if (remainingActive.length === 0 && order.status !== "paid") {
-      throw new ApiError(
-        400,
-        "Tidak bisa void item terakhir. Gunakan void seluruh order."
-      );
-    }
-
-    // Hitung ulang total dari sisa item aktif.
-    const newSubtotal = remainingActive.reduce(
-      (s, it) => s + it.unitPrice * it.qty,
-      0
-    );
-    const discount = order.discount;
-    const afterDiscount = Math.max(0, newSubtotal - discount);
-    const { taxRate, serviceRate } = SERVER_POS_CONFIG.outlet;
-    const newTax = Math.round(afterDiscount * taxRate);
-    const newService = Math.round(afterDiscount * serviceRate);
-    const newTotal = afterDiscount + newTax + newService;
-
     const voidedAt = new Date().toISOString();
+    const { taxRate, serviceRate } = SERVER_POS_CONFIG.outlet;
 
     await db.transaction(async (tx) => {
-      // Kunci optimistik: item harus masih aktif (voidedAt IS NULL)
-      const result = await tx
+      const order = await tx.query.orders.findFirst({
+        where: eq(schema.orders.id, id),
+        with: { items: true },
+      });
+      if (!order) throw new ApiError(404, "Order tidak ditemukan");
+      if (order.status === "void") {
+        throw new ApiError(409, "Order sudah di-void seluruhnya");
+      }
+      if (order.status === "draft") {
+        throw new ApiError(
+          400,
+          "Order masih draft — tambahkan ke order dulu sebelum void."
+        );
+      }
+
+      const target = order.items.find((it) => it.id === itemId);
+      if (!target) throw new ApiError(404, "Item tidak ditemukan dalam order ini");
+      if (target.voidedAt) throw new ApiError(409, "Item sudah di-void");
+
+      // Cegah void semua item — minta user pakai void order saja.
+      const remainingActive = order.items.filter(
+        (it) => it.id !== itemId && !it.voidedAt
+      );
+      if (remainingActive.length === 0 && order.status !== "paid") {
+        throw new ApiError(
+          400,
+          "Tidak bisa void item terakhir. Gunakan void seluruh order."
+        );
+      }
+
+      // Hitung ulang total dari sisa item aktif.
+      const newSubtotal = remainingActive.reduce(
+        (s, it) => s + it.unitPrice * it.qty,
+        0
+      );
+      const discount = order.discount;
+      const afterDiscount = Math.max(0, newSubtotal - discount);
+      const newTax = Math.round(afterDiscount * taxRate);
+      const newService = Math.round(afterDiscount * serviceRate);
+      const newTotal = afterDiscount + newTax + newService;
+
+      // Kunci optimistik: hanya update item yang masih aktif (voidedAt IS NULL).
+      // Status di-set "done" agar KDS / aggregations tidak menariknya lagi
+      // walaupun lupa filter `voidedAt IS NULL`.
+      await tx
         .update(schema.orderItems)
         .set({
           voidedAt,
           voidedBy: user.id,
           voidedByName: user.name,
           voidReason: reason,
+          status: "done",
         })
         .where(
           and(
@@ -90,9 +106,6 @@ export async function POST(
             isNull(schema.orderItems.voidedAt)
           )
         );
-      // drizzle-orm libsql tidak return rowCount yang bisa diandalkan,
-      // tapi guard di atas (target.voidedAt) sudah cukup karena dalam transaksi.
-      void result;
 
       await tx
         .update(schema.orders)

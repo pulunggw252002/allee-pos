@@ -159,6 +159,8 @@ export const orderItems = sqliteTable(
   (t) => ({
     byOrder: index("order_item_order_idx").on(t.orderId),
     byStation: index("order_item_station_idx").on(t.stationId, t.status),
+    // Untuk audit void & laporan backoffice (mis. "void per hari", "void per kasir").
+    byVoided: index("order_item_voided_idx").on(t.voidedAt),
   })
 );
 
