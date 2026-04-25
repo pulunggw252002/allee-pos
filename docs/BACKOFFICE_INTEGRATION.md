@@ -122,23 +122,34 @@ Failure di-log; perlu retry queue di Phase 2.
 
 ## 3.5. Auto-sync (zero manual intervention)
 
-Tiga lapis auto-sync sehingga owner di backoffice ganti harga / tambah menu,
+Dua lapis auto-sync sehingga owner di backoffice ganti harga / tambah menu,
 POS pickup tanpa kasir kudu tekan apa-apa:
 
 | Layer | Trigger | Frekuensi |
 |---|---|---|
-| **A. Vercel Cron** | jadwal `*/15 * * * *` (lihat `vercel.json`) | tiap 15 menit |
-| **B. Stale-while-revalidate** | request ke `/api/products` / `/api/categories` / `/api/cashiers`, kalau last sync > 5 menit | per request (background, non-blocking) |
-| **C. First-run await** | request pertama setelah deploy fresh (last sync = null) | sekali |
+| **A. Stale-while-revalidate** | request ke `/api/products` / `/api/categories` / `/api/cashiers`, kalau last sync > 5 menit | per request (background, non-blocking) |
+| **B. First-run await** | request pertama setelah deploy fresh (last sync = null) | sekali |
 
-Layer A butuh env `CRON_SECRET` di-set (Vercel auto-attach
-`Authorization: Bearer $CRON_SECRET`). Layer B & C tidak butuh secret —
-internal in-process. Concurrent stale detect di-dedupe pakai single
-in-flight promise di module scope (tidak fire 5 sync paralel).
+Concurrent stale detect di-dedupe pakai single in-flight promise di module
+scope (tidak fire 5 sync paralel kalau bareng-bareng request masuk).
 
 Window staleness 5 menit di-tetapkan di `lib/api-server/backoffice/sync.ts`
 (`DEFAULT_FRESHNESS_MS`). Naikkan kalau backoffice load tinggi, turunkan
 kalau owner sering ganti harga.
+
+> **Kenapa tidak ada cron?** Vercel Hobby tier hanya support cron daily.
+> Daily terlalu jarang untuk catalog yang berubah di siang hari.
+> Stale-while-revalidate sudah cukup karena POS pasti ada request saat
+> kasir buka order screen. Kalau outlet butuh sync di luar jam operasional
+> (mis. catalog update tengah malam mau aktif jam 7 pagi), upgrade ke
+> Vercel Pro lalu tambah `vercel.json`:
+>
+> ```json
+> { "crons": [{ "path": "/api/backoffice/sync", "schedule": "*/15 * * * *" }] }
+> ```
+>
+> ATAU pakai cron eksternal (cron-job.org, GitHub Actions schedule)
+> hit URL `GET /api/backoffice/sync` dengan `Authorization: Bearer $CRON_SECRET`.
 
 ## 3.6. Auto-push (write-side)
 
