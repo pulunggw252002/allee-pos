@@ -178,6 +178,7 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     for (const u of posRelevant) {
       const role = mapBackofficeRoleToPos(u);
       const email = synthesizeEmail(u);
+      const username = deriveUsername(u);
       await tx
         .insert(schema.users)
         .values({
@@ -186,7 +187,7 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
           email,
           emailVerified: true,
           role,
-          username: deriveUsername(u),
+          username,
           displayUsername: u.name,
         })
         .onConflictDoUpdate({
@@ -195,6 +196,11 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
             name: u.name,
             email,
             role,
+            // Username juga di-update on conflict supaya kalau slugifier
+            // berubah (mis. fix hyphen → underscore biar kompatibel dengan
+            // Better Auth username plugin), existing rows ikut migrasi
+            // tanpa perlu manual SQL UPDATE.
+            username,
             displayUsername: u.name,
           },
         });
