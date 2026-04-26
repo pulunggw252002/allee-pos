@@ -261,13 +261,19 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
   // masih aktif di backoffice. User yang Owner non-aktifkan harus tidak
   // bisa login ke POS — sebelumnya kita masih sync mereka, jadi PIN-nya
   // tetap valid dan kasir yg sudah resign masih bisa buka shift.
+  //
+  // `owner` ikut di-allow supaya owner outlet single-tenant (yang juga
+  // berperan jaga kasir) bisa login ke POS via PIN. Owner tanpa
+  // outlet_id (boss multi-outlet) otomatis ke-skip lewat clause
+  // `outlet_id === outletId` di atas. Mapping role POS-side → "supervisor"
+  // tetap di-handle oleh `mapBackofficeRoleToPos()`.
   const posRelevant = boUsers.filter(
     (u) =>
       u.outlet_id === outletId &&
       // Default ke true untuk backward-compat kalau backoffice belum kirim
       // field ini — selama field ada dan false, kita skip.
       u.is_active !== false &&
-      ["kasir", "kepala_toko", "barista", "kitchen", "waiters"].includes(u.role)
+      ["owner", "kasir", "kepala_toko", "barista", "kitchen", "waiters"].includes(u.role)
   );
   // Set ID user POS-relevan saat ini — dipakai untuk soft-revoke credential
   // user lama (resigned) di blok PIN sync di bawah.
