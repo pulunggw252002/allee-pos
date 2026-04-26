@@ -219,6 +219,14 @@ export interface BackofficeUser {
    * supaya cocok dengan format yang seed backoffice pakai.
    */
   email?: string;
+  /**
+   * Owner non-aktifkan user via DELETE /api/users/:id (soft-delete) atau
+   * langsung lewat edit form. Sync POS HARUS skip user dengan
+   * `is_active === false` supaya kasir yg sudah di-revoke tidak bisa
+   * login pakai PIN lama. Optional di tipe karena backoffice lama belum
+   * konsisten kirim — sync code default-kan ke `true` kalau undefined.
+   */
+  is_active?: boolean;
   /** Selalu di-redact: "***" atau null. Jangan pernah trust value selain itu. */
   pos_pin: "***" | null;
 }

@@ -70,7 +70,15 @@ export interface SyncReport {
   categories: { upserted: number };
   products: { upserted: number; deactivated: number };
   users: { upserted: number };
-  pins: { upserted: number; cleared: number };
+  /**
+   * `error` ≠ null artinya PIN endpoint backoffice gagal di-fetch (mis.
+   * `POS_WEBHOOK_SECRET` belum di-set di env POS). Sync utama tetap sukses
+   * supaya catalog + users masih ke-update, tapi credential PIN TIDAK
+   * di-overwrite — kasir baru/rotasi PIN belum bisa login sampai sync
+   * ulang dengan secret yg benar. UI sync button + cron log harus surface
+   * field ini supaya operator paham.
+   */
+  pins: { upserted: number; cleared: number; error: string | null };
   printers: { upserted: number; deactivated: number };
   durationMs: number;
 }
@@ -249,12 +257,21 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
 
   // --- Users → users (cashiers) --------------------------------------------
   const boUsers = await fetchUsers();
-  // Filter: hanya yang assigned ke outlet ini DAN role yang relevan untuk POS.
+  // Filter: hanya yang assigned ke outlet ini, role relevan untuk POS, DAN
+  // masih aktif di backoffice. User yang Owner non-aktifkan harus tidak
+  // bisa login ke POS — sebelumnya kita masih sync mereka, jadi PIN-nya
+  // tetap valid dan kasir yg sudah resign masih bisa buka shift.
   const posRelevant = boUsers.filter(
     (u) =>
       u.outlet_id === outletId &&
+      // Default ke true untuk backward-compat kalau backoffice belum kirim
+      // field ini — selama field ada dan false, kita skip.
+      u.is_active !== false &&
       ["kasir", "kepala_toko", "barista", "kitchen", "waiters"].includes(u.role)
   );
+  // Set ID user POS-relevan saat ini — dipakai untuk soft-revoke credential
+  // user lama (resigned) di blok PIN sync di bawah.
+  const posRelevantIds = new Set(posRelevant.map((u) => u.id));
 
   await db.transaction(async (tx) => {
     for (const u of posRelevant) {
@@ -378,6 +395,22 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
         pinsCleared++;
       }
     }
+
+    // Bersihkan credential row untuk user yang sudah TIDAK lagi relevan ke
+    // outlet ini (resigned, di-deactivate, atau pindah outlet). Tanpa
+    // langkah ini, user yg di-deactivate di backoffice tetap punya PIN
+    // valid di POS DB — mereka bisa terus login meski Owner sudah cabut
+    // akses. Kita target row credential yang user-nya tidak ada di
+    // posRelevant saat ini.
+    const allCreds = await tx
+      .select({ id: schema.accounts.id, userId: schema.accounts.userId })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.providerId, "credential"));
+    for (const c of allCreds) {
+      if (posRelevantIds.has(c.userId)) continue;
+      await tx.delete(schema.accounts).where(eq(schema.accounts.id, c.id));
+      pinsCleared++;
+    }
   });
 
   // --- Printers -----------------------------------------------------------
@@ -455,7 +488,16 @@ export async function syncFromBackoffice(): Promise<SyncReport> {
     categories: { upserted: posCategories.length },
     products: { upserted: posProducts.length, deactivated },
     users: { upserted: posRelevant.length },
-    pins: { upserted: pinsUpserted, cleared: pinsCleared },
+    // `error` non-null = PIN endpoint gagal (mis. POS_WEBHOOK_SECRET
+    // belum di-set di env POS). Catalog & users tetap ke-sync, tapi
+    // kasir baru tidak akan bisa login dengan PIN sampai sync ulang
+    // dengan secret yg benar. Caller (UI sync button / cron) harus
+    // surface field ini ke operator — sebelumnya silent.
+    pins: {
+      upserted: pinsUpserted,
+      cleared: pinsCleared,
+      error: pinSyncError,
+    },
     printers: { upserted: printersUpserted, deactivated: printersDeactivated },
     durationMs: Date.now() - start,
   };
